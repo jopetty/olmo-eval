@@ -3,7 +3,7 @@
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from .scorers import (
     BitsPerByteScorer,
@@ -35,6 +35,10 @@ class Metric(Protocol):
         """Compute aggregate metric from scored responses."""
         ...
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a dictionary."""
+        ...
+
 
 @dataclass(frozen=True, slots=True)
 class AccuracyMetric:
@@ -50,6 +54,10 @@ class AccuracyMetric:
         total = sum(r.scores.get(scorer_name, 0.0) for r in responses)
         return total / len(responses)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a dictionary."""
+        return {"type": "AccuracyMetric", "name": self.name, "scorer": self.scorer.__name__}
+
 
 @dataclass(frozen=True, slots=True)
 class F1Metric:
@@ -64,6 +72,10 @@ class F1Metric:
         scorer_name = _get_scorer_name(self.scorer)
         total = sum(r.scores.get(scorer_name, 0.0) for r in responses)
         return total / len(responses)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a dictionary."""
+        return {"type": "F1Metric", "name": self.name, "scorer": self.scorer.__name__}
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +138,10 @@ class BPBMetric:
 
         return -total_logprobs / (total_bytes * math.log(2))
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a dictionary."""
+        return {"type": "BPBMetric", "name": self.name, "scorer": self.scorer.__name__}
+
 
 @dataclass(frozen=True, slots=True)
 class MeanPerplexityMetric:
@@ -166,3 +182,7 @@ class MeanPerplexityMetric:
             total += scorer_instance.score(response.instance, output)
 
         return total / len(responses)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a dictionary."""
+        return {"type": "MeanPerplexityMetric", "name": self.name, "scorer": self.scorer.__name__}
