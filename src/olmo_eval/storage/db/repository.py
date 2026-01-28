@@ -146,10 +146,11 @@ class ExperimentRepository:
         model_name: str | None = None,
         model_hash: str | None = None,
         task_name: str | None = None,
+        task_hash: str | None = None,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
         latest: bool = False,
-        limit: int = 100,
+        limit: int | None = None,
         offset: int = 0,
     ) -> list[EvalResult]:
         """Query evaluation experiments with filters.
@@ -158,10 +159,11 @@ class ExperimentRepository:
             model_name: Filter by model name (exact match).
             model_hash: Filter by model hash (hash of model config).
             task_name: Filter by task name (experiments containing this task).
+            task_hash: Filter by task hash (experiments containing this task config).
             start_time: Filter by timestamp >= start_time.
             end_time: Filter by timestamp <= end_time.
             latest: If True, return only the most recent result (limit=1).
-            limit: Maximum number of results to return.
+            limit: Maximum number of results to return (None = unlimited).
             offset: Number of results to skip (for pagination).
 
         Returns:
@@ -192,13 +194,24 @@ class ExperimentRepository:
                 .where(TaskResult.task_name == task_name)
             )
 
+        if task_hash:
+            # Subquery to find experiment ids that have this task hash
+            from sqlalchemy import exists
+
+            stmt = stmt.where(
+                exists()
+                .where(TaskResult.experiment_pk == Experiment.id)
+                .where(TaskResult.task_hash == task_hash)
+            )
+
         # Order by timestamp descending (most recent first)
         stmt = stmt.order_by(Experiment.timestamp.desc())
 
         # Apply pagination (latest overrides limit)
-        effective_limit = 1 if latest else limit
-        stmt = stmt.limit(effective_limit)
-        if not latest:
+        if latest:
+            stmt = stmt.limit(1)
+        elif limit is not None:
+            stmt = stmt.limit(limit)
             stmt = stmt.offset(offset)
 
         # Execute query
@@ -582,9 +595,6 @@ class InstancePredictionRepository:
         Returns:
             List of instance dicts with task_name and model_hash included.
         """
-        # Determine required joins based on filters
-        needs_experiment_join = bool(experiment_ids or model_names or model_hashes)
-
         # Build select - always include task_name and model_hash for consistency
         columns = [
             InstancePrediction.id,
@@ -592,9 +602,8 @@ class InstancePredictionRepository:
             InstancePrediction.native_id,
             InstancePrediction.instance_metrics,
             TaskResult.task_name,
+            Experiment.model_hash,
         ]
-        if needs_experiment_join:
-            columns.append(Experiment.model_hash)
 
         stmt = select(*columns)
 
@@ -607,9 +616,8 @@ class InstancePredictionRepository:
             ),
         )
 
-        # Join Experiment if needed for model/experiment_id filters
-        if needs_experiment_join:
-            stmt = stmt.join(Experiment, Experiment.id == InstancePrediction.experiment_pk)
+        # Always join Experiment to get model_hash
+        stmt = stmt.join(Experiment, Experiment.id == InstancePrediction.experiment_pk)
 
         # Apply filters - all compose with AND
         if after_id is not None:
@@ -640,16 +648,16 @@ class InstancePredictionRepository:
         # Build result dicts with consistent schema
         output = []
         for row in results:
-            d: dict[str, Any] = {
-                "id": row.id,
-                "task_hash": row.task_hash,
-                "task_name": row.task_name,
-                "native_id": row.native_id,
-                "instance_metrics": row.instance_metrics,
-            }
-            if needs_experiment_join:
-                d["model_hash"] = row.model_hash
-            output.append(d)
+            output.append(
+                {
+                    "id": row.id,
+                    "task_hash": row.task_hash,
+                    "task_name": row.task_name,
+                    "native_id": row.native_id,
+                    "instance_metrics": row.instance_metrics,
+                    "model_hash": row.model_hash,
+                }
+            )
 
         return output
 
