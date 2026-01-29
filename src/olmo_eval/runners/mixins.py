@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
 
+from olmo_eval.core.logging import get_logger
 from olmo_eval.runners.utils import (
     TaskResult,
     generate_experiment_id,
@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from olmo_eval.storage import StorageBackend
 
 console = Console()
-logger = logging.getLogger(__name__)
+logger = get_logger("runners.mixins")
 
 
 # -----------------------------------------------------------------------------
@@ -780,10 +780,10 @@ class RunnerResultsMixin:
         """Report when a (model, task) pair completes."""
         label = f"{model_name}:{result.spec}"
         if result.error:
-            console.print(f"  [red]x[/red] {label} (ERROR: {result.error})")
+            console.print(f"  [red]✗[/red] {label} (ERROR: {result.error})")
         else:
             console.print(
-                f"  [green]v[/green] {label} ({result.num_instances} instances, "
+                f"  [green]✓[/green] {label} ({result.num_instances} instances, "
                 f"{result.duration_seconds:.1f}s)"
             )
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 import math
 import os
 import uuid
@@ -12,6 +11,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from olmo_eval.core import Response, SamplingParams
+from olmo_eval.core.logging import get_logger
 from olmo_eval.evals.tasks import get_task
 from olmo_eval.inference import InferenceProvider
 
@@ -35,7 +35,7 @@ __all__ = [
     "write_requests_jsonl",
 ]
 
-logger = logging.getLogger(__name__)
+logger = get_logger("runners.utils")
 
 # Filename suffixes for output files (consistent across all runners and storage backends)
 PREDICTIONS_SUFFIX = "-predictions.jsonl"
@@ -801,7 +801,7 @@ def write_predictions_jsonl(
         for pred in predictions:
             f.write(json.dumps(pred) + "\n")
 
-    logger.info(f"Wrote {len(predictions)} predictions for {spec}")
+    logger.info(f"Saved {len(predictions)} predictions: {spec}")
 
 
 def write_requests_jsonl(
@@ -837,4 +837,4 @@ def write_requests_jsonl(
         for req in requests:
             f.write(json.dumps(req) + "\n")
 
-    logger.info(f"Wrote {len(requests)} requests for {spec}")
+    logger.info(f"Saved {len(requests)} requests: {spec}")
