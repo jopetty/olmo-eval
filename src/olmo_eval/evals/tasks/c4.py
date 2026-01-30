@@ -51,8 +51,8 @@ class C4Task(Task):
             return None
 
         return Instance(
-            question="",          # Context
-            gold_answer=text,     # The text we score as the "continuation"
+            question="",  # Context
+            gold_answer=text,  # The text we score as the "continuation"
             metadata={
                 "id": index,
                 "num_chars": len(text),
@@ -71,7 +71,6 @@ class C4Task(Task):
             continuations=(instance.gold_answer,),
         )
 
-
     def extract_answer(self, output: LMOutput) -> str:
         # Not used for scoring
         return output.text
@@ -79,17 +78,21 @@ class C4Task(Task):
 
 class C41KTask(C4Task):
     """C4 perplexity task on 1,000 randomly sampled documents."""
+
     default_subset: str = "1k"
 
 
 class C410KTask(C4Task):
     """C4 perplexity task on 10,000 randomly sampled documents."""
+
     default_subset: str = "10k"
 
 
 class C4100KTask(C4Task):
     """C4 perplexity task on 100,000 randomly sampled documents."""
+
     default_subset: str = "100k"
+
 
 # =============================================================================
 # Task Configs
@@ -140,24 +143,28 @@ def _c4_100k_config() -> TaskConfig:
 @register("c4", _c4_config)
 class C4(C4Task):
     """C4 perplexity task."""
+
     pass
 
 
 @register("c4_1k", _c4_1k_config)
 class C41K(C41KTask):
     """C4 perplexity task on 1,000 randomly sampled documents."""
+
     pass
 
 
 @register("c4_10k", _c4_10k_config)
 class C410K(C410KTask):
     """C4 perplexity task on 10,000 randomly sampled documents."""
+
     pass
 
 
 @register("c4_100k", _c4_100k_config)
 class C4100K(C4100KTask):
     """C4 perplexity task on 100,000 randomly sampled documents."""
+
     pass
 
 
