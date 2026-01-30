@@ -11,6 +11,7 @@ from .scorers import (
     CodeExecutionScorer,
     ExactMatchScorer,
     F1Scorer,
+    LogprobScorer,
     PerplexityScorer,
     Scorer,
 )
@@ -216,11 +217,13 @@ class CorpusPerplexityMetric(Metric):
     """
 
     name: str = "corpus_perplexity"
+    scorer: type[Scorer] = LogprobScorer
 
     def compute(self, responses: Sequence[Response]) -> float:
         if not responses:
             return 0.0
 
+        scorer = self.scorer()
         total_logprob = 0.0
         total_tokens = 0
 
@@ -232,12 +235,17 @@ class CorpusPerplexityMetric(Metric):
             output = outputs[0]
             if output.logprobs is None:
                 continue
-            for tok in output.logprobs:
-                lp = tok.get("logprob")
-                if lp is None:
-                    continue
-                total_logprob += lp
-                total_tokens += 1
+            total_logprob += scorer.score(response.instance, output)
+            total_tokens += len(output.logprobs)
+
+            # if output.logprobs is None:
+            #     continue
+            # for tok in output.logprobs:
+            #     lp = tok.get("logprob")
+            #     if lp is None:
+            #         continue
+            #     total_logprob += lp
+            #     total_tokens += 1
 
         if total_tokens == 0:
             return 0.0
