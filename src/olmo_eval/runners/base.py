@@ -46,6 +46,13 @@ class BaseEvalRunner(ABC):
     save_predictions: bool = True
     save_requests: bool = True
 
+    # Instance/response inspection options
+    inspect_instance: bool = False
+    inspect_formatted: bool = False
+    inspect_tokens: bool = False
+    inspect_response: bool = False
+    inspect_request: bool = False
+
     @abstractmethod
     def validate(self) -> None:
         """Validate runner configuration.

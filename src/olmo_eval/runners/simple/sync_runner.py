@@ -67,6 +67,13 @@ class SyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
     save_predictions: bool = True
     save_requests: bool = True
 
+    # Instance/response inspection options
+    inspect_instance: bool = False
+    inspect_formatted: bool = False
+    inspect_tokens: bool = False
+    inspect_response: bool = False
+    inspect_request: bool = False
+
     def validate(self) -> None:
         """Validate all inputs before running.
 
@@ -106,7 +113,12 @@ class SyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
 
     def run(self) -> dict[str, Any]:
         """Execute the evaluation run."""
+        import time
+
         from olmo_eval.evals.tasks import AgentTask, get_task
+
+        # Track experiment start time
+        experiment_start = time.time()
 
         model_config = get_model_config(self.model_name, **self.model_overrides)
 
@@ -145,6 +157,9 @@ class SyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
             extra_kwargs["load_format"] = self.model_overrides["load_format"]
         if self.model_overrides.get("extra_loader_config"):
             extra_kwargs["model_loader_extra_config"] = self.model_overrides["extra_loader_config"]
+
+        # Track provider init time
+        provider_init_start = time.time()
         provider = create_provider(
             provider_type,
             model_config.model,
@@ -154,6 +169,7 @@ class SyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
             dtype=model_config.dtype,
             **extra_kwargs,
         )
+        provider_init_time = time.time() - provider_init_start
 
         from olmo_eval.runners.mixins import get_model_display_name
 
@@ -174,6 +190,73 @@ class SyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
         }
 
         for spec in expanded_tasks:
+            # Optionally inspect first instance before running
+            if (
+                self.inspect_instance
+                or self.inspect_formatted
+                or self.inspect_tokens
+                or self.inspect_request
+            ):
+                from olmo_eval.core.inspection import (
+                    format_with_chat_template,
+                    inspect_formatted_request,
+                    inspect_instance,
+                    inspect_request,
+                    inspect_tokens,
+                    tokenize_request,
+                )
+                from olmo_eval.evals.tasks import get_task
+
+                task = get_task(spec)
+                first_instance = next(iter(task.instances), None)
+                if first_instance:
+                    if self.inspect_instance:
+                        console.print()
+                        inspect_instance(first_instance, console=console, task_name=spec, index=0)
+
+                    # Get request for inspection
+                    if self.inspect_request or self.inspect_formatted or self.inspect_tokens:
+                        request = task.format_request(first_instance)
+
+                        if self.inspect_request:
+                            inspect_request(
+                                request,
+                                console=console,
+                                title=f"[bold]Request[/bold] ({spec})",
+                            )
+
+                    # Get tokenizer from provider for formatted/token inspection
+                    if self.inspect_formatted or self.inspect_tokens:
+                        tokenizer = self._get_provider_tokenizer(provider)
+                        if tokenizer is None:
+                            console.print(
+                                "[yellow]Warning:[/yellow] Cannot inspect formatted/tokens - "
+                                "tokenizer not available from provider"
+                            )
+                        else:
+                            if self.inspect_formatted:
+                                try:
+                                    formatted_prompt = format_with_chat_template(request, tokenizer)
+                                    inspect_formatted_request(
+                                        formatted_prompt,
+                                        console=console,
+                                        title=f"[bold]Formatted Prompt[/bold] ({spec})",
+                                    )
+                                except Exception as e:
+                                    console.print(f"[red]Error formatting request:[/red] {e}")
+
+                            if self.inspect_tokens:
+                                try:
+                                    tokens = tokenize_request(request, tokenizer)
+                                    inspect_tokens(
+                                        tokens,
+                                        tokenizer,
+                                        console=console,
+                                        title=f"[bold]Token IDs[/bold] ({spec})",
+                                    )
+                                except Exception as e:
+                                    console.print(f"[red]Error tokenizing request:[/red] {e}")
+
             console.print(f"\n[bold blue]Running {spec}...[/bold blue]")
             task_result = self._run_task(spec, provider)
             task_data = task_result.to_dict(include_predictions=True)
@@ -210,6 +293,12 @@ class SyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
         # Log summary of all scores
         self._log_summary(results)
 
+        # Compute experiment duration
+        experiment_duration_seconds = time.time() - experiment_start
+
+        # Build provider init times dict
+        provider_init_seconds = {display_model_name: provider_init_time}
+
         # Compute experiment_id and model_hash upfront for both metrics.json and storage
         from olmo_eval.core.types import compute_model_hash
 
@@ -223,6 +312,8 @@ class SyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
             experiment_name=self.experiment_name,
             experiment_group=self.experiment_group,
             model_hash=model_hash,
+            experiment_duration_seconds=experiment_duration_seconds,
+            provider_init_seconds=provider_init_seconds,
         )
 
         s3_location: str | None = None
@@ -241,6 +332,8 @@ class SyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
             experiment_id=experiment_id,
             model_hash=model_hash,
             s3_location=s3_location,
+            experiment_duration_seconds=experiment_duration_seconds,
+            provider_init_seconds=provider_init_seconds,
         )
 
         return results
@@ -250,6 +343,15 @@ class SyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
         # Build overrides from per-task inline overrides
         overrides, sampling_overrides = self._build_task_overrides(spec)
 
+        # Build response callback for inspection if enabled
+        response_callback = None
+        if self.inspect_response:
+            from olmo_eval.core.inspection import inspect_response
+
+            def response_callback(resp: Any) -> None:
+                console.print()
+                inspect_response(resp, console=console, task_name=spec, index=0)
+
         # Standard task - use shared task execution logic
         result = run_task_impl(
             spec=spec,
@@ -257,6 +359,7 @@ class SyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
             overrides=overrides or None,
             progress_callback=lambda msg: console.print(f"  {msg}"),
             sampling_overrides=sampling_overrides or None,
+            response_callback=response_callback,
         )
 
         # Check for errors
@@ -264,3 +367,7 @@ class SyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
             raise RuntimeError(f"Task {spec} failed: {result.error}")
 
         return result
+
+    def _get_provider_tokenizer(self, provider: InferenceProvider) -> Any:
+        """Get tokenizer from provider."""
+        return provider.get_tokenizer()

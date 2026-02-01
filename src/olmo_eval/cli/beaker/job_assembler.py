@@ -5,6 +5,8 @@ from __future__ import annotations
 import json as json_module
 from typing import TYPE_CHECKING, Any
 
+from olmo_eval.core.constants.infrastructure import BEAKER_RESULT_DIR
+
 if TYPE_CHECKING:
     from olmo_eval.cli.beaker.config_loader import LaunchConfig
     from olmo_eval.launch import BeakerJobConfig, EvalConfig, ModelConfig
@@ -129,7 +131,10 @@ class JobConfigAssembler:
             "HF_HOME": "/weka/oe-eval-default/oyvindt/hf-cache",
             "HF_HUB_CACHE": "/weka/oe-eval-default/oyvindt/hf-cache",
             "BEAKER_AUTHOR": self.beaker_username,
+            "UV_LINK_MODE": "copy",
         }
+        if self.config.uv_cache_dir:
+            job_env_vars["UV_CACHE_DIR"] = self.config.uv_cache_dir
 
         return BeakerJobConfig(
             name=exp_name,
@@ -179,6 +184,9 @@ class JobConfigAssembler:
     ) -> list[str]:
         """Build the olmo-eval run command."""
         command: list[str] = ["olmo-eval", "run"]
+
+        # Set output directory for Beaker (defaults to /tmp/results locally)
+        command.extend(["-o", BEAKER_RESULT_DIR])
 
         # Add models
         for m_cfg, m_spec in zip(exp_model_cfgs, exp_model_specs, strict=True):
@@ -255,6 +263,16 @@ class JobConfigAssembler:
             command.append("--no-save-predictions")
         if not self.config.save_requests:
             command.append("--no-save-requests")
+        if self.config.inspect_instance:
+            command.append("--inspect-instance")
+        if self.config.inspect_formatted:
+            command.append("--inspect-formatted")
+        if self.config.inspect_tokens:
+            command.append("--inspect-tokens")
+        if self.config.inspect_response:
+            command.append("--inspect-response")
+        if self.config.inspect_request:
+            command.append("--inspect-request")
 
         return command
 

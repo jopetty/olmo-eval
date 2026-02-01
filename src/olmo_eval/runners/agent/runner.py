@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
@@ -72,6 +73,12 @@ class AgentEvalRunner(RunnerResultsMixin, BaseEvalRunner):
     save_predictions: bool = True
     save_requests: bool = True
 
+    # Instance inspection options
+    inspect_instance: bool = False
+    inspect_formatted: bool = False
+    inspect_tokens: bool = False
+    inspect_request: bool = False
+
     def validate(self) -> None:
         """Validate all inputs before running.
 
@@ -123,6 +130,8 @@ class AgentEvalRunner(RunnerResultsMixin, BaseEvalRunner):
 
     def run(self) -> dict[str, Any]:
         """Execute the agent evaluation run."""
+        experiment_start = time.time()
+
         from olmo_eval.evals.tasks import AgentTask, get_task
 
         model_config = get_model_config(self.model_name, **self.model_overrides)
@@ -158,7 +167,77 @@ class AgentEvalRunner(RunnerResultsMixin, BaseEvalRunner):
             "model_config": model_config_dict,
         }
 
+        # Load tokenizer once for formatted/token inspection
+        tokenizer = None
+        if self.inspect_formatted or self.inspect_tokens:
+            from olmo_eval.core.inspection import load_tokenizer
+
+            tokenizer_name = model_config.tokenizer or model_config.model
+            try:
+                tokenizer = load_tokenizer(tokenizer_name)
+            except Exception as e:
+                console.print(f"[yellow]Warning:[/yellow] Could not load tokenizer: {e}")
+
         for spec in expanded_tasks:
+            # Optionally inspect first instance before running
+            if (
+                self.inspect_instance
+                or self.inspect_formatted
+                or self.inspect_tokens
+                or self.inspect_request
+            ):
+                from olmo_eval.core.inspection import (
+                    format_with_chat_template,
+                    inspect_formatted_request,
+                    inspect_instance,
+                    inspect_request,
+                    inspect_tokens,
+                    tokenize_request,
+                )
+
+                task = get_task(spec)
+                first_instance = next(iter(task.instances), None)
+                if first_instance:
+                    if self.inspect_instance:
+                        console.print()
+                        inspect_instance(first_instance, console=console, task_name=spec, index=0)
+
+                    # Get request for inspection
+                    if self.inspect_request or (
+                        tokenizer and (self.inspect_formatted or self.inspect_tokens)
+                    ):
+                        request = task.format_request(first_instance)
+
+                        if self.inspect_request:
+                            inspect_request(
+                                request,
+                                console=console,
+                                title=f"[bold]Request[/bold] ({spec})",
+                            )
+
+                        if tokenizer and self.inspect_formatted:
+                            try:
+                                formatted_prompt = format_with_chat_template(request, tokenizer)
+                                inspect_formatted_request(
+                                    formatted_prompt,
+                                    console=console,
+                                    title=f"[bold]Formatted Prompt[/bold] ({spec})",
+                                )
+                            except Exception as e:
+                                console.print(f"[red]Error formatting request:[/red] {e}")
+
+                        if tokenizer and self.inspect_tokens:
+                            try:
+                                tokens = tokenize_request(request, tokenizer)
+                                inspect_tokens(
+                                    tokens,
+                                    tokenizer,
+                                    console=console,
+                                    title=f"[bold]Token IDs[/bold] ({spec})",
+                                )
+                            except Exception as e:
+                                console.print(f"[red]Error tokenizing request:[/red] {e}")
+
             console.print(f"[bold blue]Running agent task: {spec}[/bold blue]")
             task_result = self._run_agent_task(spec)
             task_data = task_result.to_dict(include_predictions=True)
@@ -201,6 +280,9 @@ class AgentEvalRunner(RunnerResultsMixin, BaseEvalRunner):
         experiment_id = generate_experiment_id()
         model_hash = compute_model_hash(results.get("model_config", {}))
 
+        # Compute experiment duration
+        experiment_duration_seconds = time.time() - experiment_start
+
         # Write metrics.json for Beaker (with experiment identification fields)
         self._write_metrics_json(
             results,
@@ -208,6 +290,7 @@ class AgentEvalRunner(RunnerResultsMixin, BaseEvalRunner):
             experiment_name=self.experiment_name,
             experiment_group=self.experiment_group,
             model_hash=model_hash,
+            experiment_duration_seconds=experiment_duration_seconds,
         )
 
         s3_location: str | None = None
@@ -226,6 +309,7 @@ class AgentEvalRunner(RunnerResultsMixin, BaseEvalRunner):
             experiment_id=experiment_id,
             model_hash=model_hash,
             s3_location=s3_location,
+            experiment_duration_seconds=experiment_duration_seconds,
         )
 
         return results

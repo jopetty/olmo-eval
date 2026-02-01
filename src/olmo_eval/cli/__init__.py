@@ -1,5 +1,14 @@
 """olmo-eval CLI entry point."""
 
+# Suppress noisy third-party library output BEFORE any imports.
+# Must be at the very top to take effect before transformers/datasets load.
+import os
+
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("HF_DATASETS_VERBOSITY", "error")
+os.environ.setdefault("HF_HUB_VERBOSITY", "error")
+os.environ.setdefault("HF_DATASETS_DISABLE_PROGRESS_BAR", "1")
+
 import click
 from rich.table import Table
 
@@ -8,6 +17,7 @@ import olmo_eval.evals.tasks  # noqa: F401 - triggers task registration
 from olmo_eval.cli.beaker import beaker
 from olmo_eval.cli.results import results
 from olmo_eval.cli.run import run
+from olmo_eval.cli.task import task
 from olmo_eval.cli.utils import console
 from olmo_eval.core.constants import get_model_presets
 from olmo_eval.evals.suites import get_suite, list_suites
@@ -24,6 +34,7 @@ def main() -> None:
 main.add_command(run)
 main.add_command(beaker)
 main.add_command(results)
+main.add_command(task)
 
 
 @main.command()

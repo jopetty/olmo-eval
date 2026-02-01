@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from olmo_eval.core.types import LMOutput, LMRequest, SamplingParams
 
 from .base import InferenceProvider
+from .tokenizer_utils import encode_context_and_continuation
 
 if TYPE_CHECKING:
     import torch
@@ -49,6 +50,10 @@ class HuggingFaceProvider(InferenceProvider):
         self.device = _get_device()
         self.model.to(self.device)
         self.model.eval()
+
+    def get_tokenizer(self) -> Any:
+        """Get the tokenizer for this provider."""
+        return self.tokenizer
 
     def _build_generate_kwargs(self, params: SamplingParams) -> dict:
         """Convert SamplingParams to HuggingFace generate kwargs."""
@@ -141,28 +146,26 @@ class HuggingFaceProvider(InferenceProvider):
 
         results = []
         for request in requests:
-            prompt = request.prompt
-            ctx_enc = self.tokenizer(prompt, add_special_tokens=False, return_tensors="pt").to(
-                self.device
-            )
-            ctx_len = ctx_enc["input_ids"].shape[1]
-
             request_outputs = []
             for continuation in request.continuations or ():
-                full_text = prompt + continuation
-                full_enc = self.tokenizer(
-                    full_text, add_special_tokens=False, return_tensors="pt"
-                ).to(self.device)
+                # Use shared utility for BOS handling and trailing space logic
+                context_enc, continuation_enc = encode_context_and_continuation(
+                    self.tokenizer, request.prompt, continuation
+                )
+
+                # Build full sequence as tensor
+                full_ids = context_enc + continuation_enc
+                full_enc = torch.tensor([full_ids], device=self.device)
+                ctx_len = len(context_enc)
 
                 with torch.no_grad():
-                    logits = self.model(full_enc["input_ids"]).logits
+                    logits = self.model(full_enc).logits
 
                 log_probs = torch.log_softmax(logits, dim=-1)[0]
-                cont_ids = full_enc["input_ids"][0, ctx_len:]
 
                 logprob_entries = []
                 total = 0.0
-                for i, tok in enumerate(cont_ids):
+                for i, tok in enumerate(continuation_enc):
                     lp = log_probs[ctx_len + i - 1, tok].item()
                     token_str = self.tokenizer.decode(tok, skip_special_tokens=False)
                     logprob_entries.append(

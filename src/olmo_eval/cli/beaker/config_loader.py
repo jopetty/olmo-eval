@@ -55,10 +55,18 @@ class LaunchConfig:
     debug_provider: bool = False
     save_predictions: bool = True
     save_requests: bool = True
+    inspect_instance: bool = False
+    inspect_formatted: bool = False
+    inspect_tokens: bool = False
+    inspect_response: bool = False
+    inspect_request: bool = False
 
     # Credential injection
     inject_aws_credentials: bool = False
     inject_gcs_credentials: bool = False
+
+    # UV cache directory
+    uv_cache_dir: str | None = None
 
 
 class LaunchConfigLoader:
@@ -241,6 +249,12 @@ class LaunchConfigLoader:
             debug_provider=self.cli_args.get("debug_provider", False),
             save_predictions=self.cli_args.get("save_predictions", True),
             save_requests=self.cli_args.get("save_requests", True),
+            inspect_instance=self.cli_args.get("inspect_instance", False),
+            inspect_formatted=self.cli_args.get("inspect_formatted", False),
+            inspect_tokens=self.cli_args.get("inspect_tokens", False),
+            inspect_response=self.cli_args.get("inspect_response", False),
+            inspect_request=self.cli_args.get("inspect_request", False),
+            uv_cache_dir=self.cli_args.get("uv_cache_dir"),
         )
 
     def _validate_required(

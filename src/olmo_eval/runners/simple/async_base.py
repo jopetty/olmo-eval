@@ -79,6 +79,12 @@ class AsyncBaseRunner(AsyncRunnerMixin, BaseEvalRunner):
     save_predictions: bool = True
     save_requests: bool = True
 
+    # Instance inspection options
+    inspect_instance: bool = False
+    inspect_formatted: bool = False
+    inspect_tokens: bool = False
+    inspect_request: bool = False
+
     # Configuration for print_config display
     _mode_name: str = "Async Mode"
     _mode_description: str = "Async"
@@ -164,6 +170,90 @@ class AsyncBaseRunner(AsyncRunnerMixin, BaseEvalRunner):
                         request_objects = build_requests_from_items(items, tracker.task.config.name)
                         task_hash = compute_task_hash(tracker.task.config.to_dict())
                         self._write_requests(model_name, spec, request_objects, task_hash)
+
+        # Optionally inspect first instance of each task
+        if (
+            self.inspect_instance
+            or self.inspect_formatted
+            or self.inspect_tokens
+            or self.inspect_request
+        ):
+            from olmo_eval.core.inspection import (
+                format_with_chat_template,
+                inspect_formatted_request,
+                inspect_instance,
+                inspect_request,
+                inspect_tokens,
+                load_tokenizer,
+                tokenize_request,
+            )
+
+            inspected_tasks: set[str] = set()
+            tokenizer = None
+
+            # Load tokenizer once for formatted/token inspection
+            if self.inspect_formatted or self.inspect_tokens:
+                # Use the first model's tokenizer config
+                first_model = self.model_names[0] if self.model_names else None
+                if first_model:
+                    first_model_config = model_configs.get(first_model)
+                    if first_model_config:
+                        tokenizer_name = first_model_config.tokenizer or first_model_config.model
+                        try:
+                            tokenizer = load_tokenizer(tokenizer_name)
+                        except Exception as e:
+                            console.print(
+                                f"[yellow]Warning:[/yellow] Could not load tokenizer: {e}"
+                            )
+
+            for key, tracker in trackers.items():
+                spec = key[1]
+                if spec not in inspected_tasks and tracker.task and not tracker.error:
+                    first_instance = next(iter(tracker.task.instances), None)
+                    if first_instance:
+                        if self.inspect_instance:
+                            console.print()
+                            inspect_instance(
+                                first_instance, console=console, task_name=spec, index=0
+                            )
+
+                        # Get request for inspection
+                        if self.inspect_request or (
+                            tokenizer and (self.inspect_formatted or self.inspect_tokens)
+                        ):
+                            request = tracker.task.format_request(first_instance)
+
+                            if self.inspect_request:
+                                inspect_request(
+                                    request,
+                                    console=console,
+                                    title=f"[bold]Request[/bold] ({spec})",
+                                )
+
+                            if tokenizer and self.inspect_formatted:
+                                try:
+                                    formatted_prompt = format_with_chat_template(request, tokenizer)
+                                    inspect_formatted_request(
+                                        formatted_prompt,
+                                        console=console,
+                                        title=f"[bold]Formatted Prompt[/bold] ({spec})",
+                                    )
+                                except Exception as e:
+                                    console.print(f"[red]Error formatting request:[/red] {e}")
+
+                            if tokenizer and self.inspect_tokens:
+                                try:
+                                    tokens = tokenize_request(request, tokenizer)
+                                    inspect_tokens(
+                                        tokens,
+                                        tokenizer,
+                                        console=console,
+                                        title=f"[bold]Token IDs[/bold] ({spec})",
+                                    )
+                                except Exception as e:
+                                    console.print(f"[red]Error tokenizing request:[/red] {e}")
+
+                        inspected_tasks.add(spec)
 
         return expanded_tasks, trackers, model_items, model_configs
 
@@ -362,7 +452,12 @@ class AsyncBaseRunner(AsyncRunnerMixin, BaseEvalRunner):
 
         return results_dict
 
-    def _finalize_and_save(self, results_dict: dict[str, Any]) -> dict[str, Any]:
+    def _finalize_and_save(
+        self,
+        results_dict: dict[str, Any],
+        experiment_duration_seconds: float | None = None,
+        provider_init_seconds: dict[str, float] | None = None,
+    ) -> dict[str, Any]:
         """Log summary, write metrics, upload to S3, and save results."""
         from olmo_eval.core.types import compute_model_hash
 
@@ -380,6 +475,8 @@ class AsyncBaseRunner(AsyncRunnerMixin, BaseEvalRunner):
             experiment_id=experiment_id,
             experiment_name=self.experiment_name,
             experiment_group=self.experiment_group,
+            experiment_duration_seconds=experiment_duration_seconds,
+            provider_init_seconds=provider_init_seconds,
         )
 
         for model_name, model_data in results_dict.get("models", {}).items():
@@ -396,7 +493,11 @@ class AsyncBaseRunner(AsyncRunnerMixin, BaseEvalRunner):
             model_data["_experiment_id"] = experiment_id
             model_data["_s3_location"] = s3_location
 
-        self._save_results(results_dict)
+        self._save_results(
+            results_dict,
+            experiment_duration_seconds=experiment_duration_seconds,
+            provider_init_seconds=provider_init_seconds,
+        )
 
         return results_dict
 

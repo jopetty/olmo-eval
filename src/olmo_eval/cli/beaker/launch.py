@@ -23,7 +23,7 @@ from olmo_eval.cli.utils import (
     console,
     parse_model_spec,
 )
-from olmo_eval.core.constants.infrastructure import BEAKER_RESULT_DIR
+from olmo_eval.core.constants.infrastructure import BEAKER_RESULT_DIR, BEAKER_UV_CACHE_DIR
 
 
 @click.command()
@@ -150,6 +150,37 @@ from olmo_eval.core.constants.infrastructure import BEAKER_RESULT_DIR
     default=True,
     help="Save per-instance requests to JSONL (default: enabled)",
 )
+@click.option(
+    "--inspect-instance",
+    is_flag=True,
+    help="Print the first instance of each task before running evaluation",
+)
+@click.option(
+    "--inspect-formatted",
+    is_flag=True,
+    help="Show formatted prompt (after template applied) before evaluation",
+)
+@click.option(
+    "--inspect-tokens",
+    is_flag=True,
+    help="Show token array before evaluation",
+)
+@click.option(
+    "--inspect-response",
+    is_flag=True,
+    help="Print the first response of each task after model generation",
+)
+@click.option(
+    "--inspect-request",
+    is_flag=True,
+    help="Print the first request of each task before model generation",
+)
+@click.option(
+    "--uv-cache-dir",
+    default=BEAKER_UV_CACHE_DIR,
+    show_default=True,
+    help="UV cache directory for package downloads (on Weka shared storage)",
+)
 def launch(
     config: str | None,
     name: str | None,
@@ -185,6 +216,12 @@ def launch(
     debug_provider: bool,
     save_predictions: bool,
     save_requests: bool,
+    inspect_instance: bool,
+    inspect_formatted: bool,
+    inspect_tokens: bool,
+    inspect_response: bool,
+    inspect_request: bool,
+    uv_cache_dir: str,
 ) -> None:
     """Launch an evaluation job on Beaker.
 
@@ -244,6 +281,12 @@ def launch(
         "debug_provider": debug_provider,
         "save_predictions": save_predictions,
         "save_requests": save_requests,
+        "inspect_instance": inspect_instance,
+        "inspect_formatted": inspect_formatted,
+        "inspect_tokens": inspect_tokens,
+        "inspect_response": inspect_response,
+        "inspect_request": inspect_request,
+        "uv_cache_dir": uv_cache_dir,
     }
 
     # Load configuration
@@ -441,7 +484,7 @@ def _handle_group_creation(launcher, effective_groups: list[str], dry_run: bool)
                 console.print("[red]Aborted.[/red] Cannot launch without required groups.")
                 raise SystemExit(1) from None
 
-            workspace_obj = launcher.beaker.workspace.get(launcher.workspace)
+            workspace_obj = launcher.beaker.workspace.get(launcher._workspace)
             for grp in missing_groups:
                 try:
                     beaker_group = launcher.beaker.group.create(name=grp, workspace=workspace_obj)
