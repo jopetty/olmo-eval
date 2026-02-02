@@ -9,6 +9,7 @@ from dataclasses import asdict
 from typing import Any
 
 from olmo_eval.cli.results.display import _build_model_task_scores
+from olmo_eval.cli.results.transformers import group_experiments_by_model
 from olmo_eval.storage.formatters import (
     ComparisonModelOutput,
     ComparisonOutput,
@@ -83,7 +84,6 @@ def experiments_to_dict(
                     task_name=t.task_name,
                     task_hash=t.task_hash,
                     primary_metric=t.primary_metric,
-                    primary_score=t.primary_score,
                     num_instances=t.num_instances,
                     metrics=t.metrics,
                     instances=task_instances,
@@ -158,22 +158,23 @@ def task_comparison_to_csv(experiments: list[Any], task_filter: set[str] | None 
         experiments: List of experiment results.
         task_filter: Optional set of task names to include.
     """
-    sorted_tasks, model_scores, _ = _build_model_task_scores(experiments, task_filter)
+    task_infos, model_scores = _build_model_task_scores(experiments, task_filter)
 
-    if not sorted_tasks:
+    if not task_infos:
         return
 
     writer = csv.writer(sys.stdout)
 
-    # Header row
-    writer.writerow(["model"] + sorted_tasks)
+    # Header row - use task names from task_infos
+    sorted_task_names = [t.task_name for t in task_infos]
+    writer.writerow(["model"] + sorted_task_names)
 
     # Data rows
     for model_key in sorted(model_scores.keys()):
         scores = model_scores[model_key]
         row = [model_key]
-        for task_name in sorted_tasks:
-            score = scores.get(task_name)
+        for task_info in task_infos:
+            score = scores.get(task_info.column_key)
             row.append(f"{score:.4f}" if score is not None else "")
         writer.writerow(row)
 
@@ -215,30 +216,30 @@ def task_comparison_to_dict(
                 )
             )
 
-    models = []
-    for exp in experiments:
-        tasks = []
-        for task in exp.tasks:
-            if task_filter and task.task_name not in task_filter:
-                continue
+    grouped_models = group_experiments_by_model(experiments, task_filter)
 
-            key = (exp.model_hash or "", task.task_hash or "")
+    models = []
+    for grouped in grouped_models:
+        tasks = []
+        for task_run in grouped.task_runs:
+            key = (grouped.model_hash or "", task_run.task_hash or "")
             task_instances = instance_groups.get(key)
 
             tasks.append(
                 ComparisonTaskOutput(
-                    task_name=task.task_name,
-                    task_hash=task.task_hash,
-                    primary_metric=task.primary_metric,
-                    primary_score=task.primary_score,
+                    task_name=task_run.task_name,
+                    task_hash=task_run.task_hash,
+                    primary_metric=task_run.primary_metric,
+                    timestamp=task_run.timestamp,
+                    metrics=task_run.metrics,
                     instances=task_instances,
                 )
             )
 
         models.append(
             ComparisonModelOutput(
-                model_name=exp.model_name,
-                model_hash=exp.model_hash,
+                model_name=grouped.model_name,
+                model_hash=grouped.model_hash,
                 tasks=tasks,
             )
         )

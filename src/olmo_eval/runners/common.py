@@ -134,61 +134,152 @@ def compute_task_hash(config: dict) -> str:
     return hashlib.sha256(config_str.encode()).hexdigest()[:16]
 
 
-def get_primary_metric(
-    metrics: dict[str, float],
-    preferred: str | None = None,
-) -> tuple[str, float] | None:
-    """Get the primary metric name and value from a metrics dict.
+def log_task_metrics(
+    metrics: dict[str, dict[str, float]],
+    task_spec: str,
+    logger: Any,
+    console: Any | None = None,
+) -> None:
+    """Log task metrics in a consistent format.
 
-    Priority:
-    1. User-specified preferred metric (if provided and present)
-    2. "accuracy" if present (most common metric)
-    3. First metric alphabetically (for determinism)
+    Handles nested metrics structure: {metric_name: {scorer_name: value}}.
 
     Args:
-        metrics: Dictionary of metric names to values
-        preferred: Optional preferred metric name (from task config)
+        metrics: Nested metrics dictionary.
+        task_spec: Task specification string for the log header.
+        logger: Logger instance to use.
+        console: Optional rich console for formatted output.
+    """
+    if not metrics:
+        return
+
+    logger.info(f"** Task metrics for {task_spec}: **")
+    for metric_name, scorers in metrics.items():
+        for scorer_name, value in scorers.items():
+            line = f"  {metric_name}:{scorer_name}: {value:.4f}"
+            logger.info(line)
+            if console:
+                console.print(line)
+
+
+def make_metric_key(metric_name: str, scorer_name: str) -> str:
+    """Create a metric key in "metric:scorer" format.
+
+    Args:
+        metric_name: The metric name (e.g., "accuracy").
+        scorer_name: The scorer name (e.g., "exact_match").
 
     Returns:
-        Tuple of (metric_name, metric_value), or None if metrics is empty
+        Combined key in "metric:scorer" format.
+    """
+    return f"{metric_name}:{scorer_name}"
+
+
+def parse_metric_key(key: str) -> tuple[str, str] | None:
+    """Parse a metric key in "metric:scorer" format.
+
+    Args:
+        key: The combined key (e.g., "accuracy:exact_match").
+
+    Returns:
+        Tuple of (metric_name, scorer_name), or None if invalid format.
+    """
+    if not key or ":" not in key:
+        return None
+    parts = key.split(":", 1)
+    return (parts[0], parts[1])
+
+
+def extract_score_from_metrics(
+    metrics: dict[str, dict[str, float]] | None,
+    primary_metric: str | None,
+) -> float | None:
+    """Extract a score from nested metrics using a primary_metric identifier.
+
+    Args:
+        metrics: Nested metrics dict {metric_name: {scorer_name: score}}.
+        primary_metric: The metric identifier in "metric:scorer" format.
+
+    Returns:
+        The score value, or None if not found.
+    """
+    if not metrics or not primary_metric:
+        return None
+    parsed = parse_metric_key(primary_metric)
+    if not parsed:
+        return None
+    metric_name, scorer_name = parsed
+    if metric_name in metrics and scorer_name in metrics[metric_name]:
+        return metrics[metric_name][scorer_name]
+    return None
+
+
+def get_primary_metric(
+    metrics: dict[str, dict[str, float]],
+    preferred: str | None = None,
+) -> tuple[str, float] | None:
+    """Get the primary metric identifier and value from a nested metrics dict.
+
+    Metrics are in nested format: {metric_name: {scorer_name: score}}.
+    The returned metric identifier uses "metric_name:scorer_name" format.
+
+    Priority:
+    1. User-specified preferred (in "metric:scorer" format) if present
+    2. "accuracy" with first scorer if present
+    3. First metric:scorer alphabetically (for determinism)
+
+    Args:
+        metrics: Nested dictionary {metric_name: {scorer_name: value}}
+        preferred: Optional preferred metric in "metric:scorer" format
+
+    Returns:
+        Tuple of ("metric:scorer", value), or None if metrics is empty
     """
     if not metrics:
         return None
 
-    # Use preferred metric if specified and present
-    if preferred and preferred in metrics:
-        return (preferred, metrics[preferred])
+    # Use preferred if specified and present (format: "metric:scorer")
+    if preferred:
+        parsed = parse_metric_key(preferred)
+        if parsed:
+            metric_name, scorer_name = parsed
+            if metric_name in metrics and scorer_name in metrics[metric_name]:
+                return (preferred, metrics[metric_name][scorer_name])
 
-    # Default fallback: accuracy first
+    # Default fallback: accuracy first (with first scorer alphabetically)
     if "accuracy" in metrics:
-        return ("accuracy", metrics["accuracy"])
+        scorers = metrics["accuracy"]
+        if scorers:
+            scorer_name = sorted(scorers.keys())[0]
+            return (f"accuracy:{scorer_name}", scorers[scorer_name])
 
-    # Fallback: first metric alphabetically for determinism
-    name = sorted(metrics.keys())[0]
-    return (name, metrics[name])
+    # Fallback: first metric:scorer alphabetically for determinism
+    metric_name = sorted(metrics.keys())[0]
+    scorers = metrics[metric_name]
+    if scorers:
+        scorer_name = sorted(scorers.keys())[0]
+        return (f"{metric_name}:{scorer_name}", scorers[scorer_name])
+
+    # No valid metrics found
+    return None
 
 
-def get_metric_metadata(task: Any) -> tuple[str | None, dict[str, str] | None]:
-    """Extract metric metadata from task config.
+def get_metric_metadata(task: Any) -> str | None:
+    """Extract primary metric identifier from task config.
 
     Args:
         task: Task instance with config.metrics
 
     Returns:
-        Tuple of (primary_metric_name, metric_scorers).
-        - primary_metric_name: Name of the primary metric, or None
-        - metric_scorers: Dict mapping metric name to scorer name, or None if empty
+        Primary metric in "metric_name:scorer_name" format, or None.
     """
-    # Get primary metric name
     primary_metric = task.config.get_primary_metric()
-    primary_metric_name = primary_metric.name if primary_metric else None
+    if primary_metric is None:
+        return None
 
-    # Get metric-to-scorer mapping
-    metric_scorers: dict[str, str] = {}
-    if hasattr(task.config, "metrics"):
-        for metric in task.config.metrics:
-            if hasattr(metric, "scorer") and metric.scorer is not None:
-                scorer_instance = metric.scorer()
-                metric_scorers[metric.name] = scorer_instance.name
+    # Get scorer name for the primary metric
+    scorer_name = "default"
+    if hasattr(primary_metric, "scorer") and primary_metric.scorer is not None:
+        scorer_name = primary_metric.scorer().name
 
-    return primary_metric_name, metric_scorers if metric_scorers else None
+    return f"{primary_metric.name}:{scorer_name}"

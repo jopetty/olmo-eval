@@ -10,11 +10,25 @@ from collections.abc import Iterator
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import and_, delete, select
+from sqlalchemy import and_, delete, exists, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
-from olmo_eval.core.types import AgentMetrics, EvalResult, StoredTaskResult
+from olmo_eval.core.types import EvalResult, StoredTaskResult
 from olmo_eval.storage.backends.postgres.models import Experiment, InstancePrediction, TaskResult
+
+
+def _prefix_filter(column: Any, value: str) -> ColumnElement[bool]:
+    """Create a prefix filter using startswith matching.
+
+    Args:
+        column: SQLAlchemy column to filter on.
+        value: Prefix to match.
+
+    Returns:
+        SQLAlchemy filter expression using startswith.
+    """
+    return column.startswith(value)
 
 
 class ExperimentRepository:
@@ -76,11 +90,9 @@ class ExperimentRepository:
                 metrics=task_data.metrics,
                 num_instances=task_data.num_instances,
                 primary_metric=task_data.primary_metric,
-                primary_score=task_data.primary_score,
                 s3_metrics_key=task_data.s3_metrics_key,
                 s3_predictions_key=task_data.s3_predictions_key,
                 s3_requests_key=task_data.s3_requests_key,
-                agent_metrics=task_data.agent.to_dict() if task_data.agent else None,
                 duration_seconds=task_data.duration_seconds,
             )
             self.session.add(task_result)
@@ -147,25 +159,32 @@ class ExperimentRepository:
 
     def query(
         self,
-        model_name: str | None = None,
-        model_hash: str | None = None,
-        task_name: str | None = None,
-        task_hash: str | None = None,
-        experiment_group: str | None = None,
+        experiment_ids: list[str] | None = None,
+        model_names: list[str] | None = None,
+        model_hashes: list[str] | None = None,
+        task_names: list[str] | None = None,
+        task_hashes: list[str] | None = None,
+        experiment_groups: list[str] | None = None,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
         latest: bool = False,
         limit: int | None = None,
         offset: int = 0,
     ) -> list[EvalResult]:
-        """Query evaluation experiments with filters.
+        """Query evaluation experiments with filters (AND logic).
+
+        All filters are combined with AND. Within a list filter, items are OR'd.
+        For example: model_names=['llama', 'qwen'] AND task_names=['mmlu']
+        matches experiments where (model starts with 'llama' OR 'qwen') AND
+        (has task starting with 'mmlu').
 
         Args:
-            model_name: Filter by model name (exact match).
-            model_hash: Filter by model hash (hash of model config).
-            task_name: Filter by task name (experiments containing this task).
-            task_hash: Filter by task hash (experiments containing this task config).
-            experiment_group: Filter by experiment group (exact match).
+            experiment_ids: Filter by experiment IDs (exact match, OR within list).
+            model_names: Filter by model name prefixes (OR within list).
+            model_hashes: Filter by model hash prefixes (OR within list).
+            task_names: Filter by task name prefixes (OR within list).
+            task_hashes: Filter by task hash prefixes (OR within list).
+            experiment_groups: Filter by experiment group prefixes (OR within list).
             start_time: Filter by timestamp >= start_time.
             end_time: Filter by timestamp <= end_time.
             latest: If True, return only the most recent result (limit=1).
@@ -177,15 +196,21 @@ class ExperimentRepository:
         """
         stmt = select(Experiment)
 
-        # Apply filters
-        if model_name:
-            stmt = stmt.where(Experiment.model_name == model_name)
+        # Apply filters (all combined with AND, prefix matching for strings)
+        if experiment_ids:
+            stmt = stmt.where(Experiment.experiment_id.in_(experiment_ids))
 
-        if model_hash:
-            stmt = stmt.where(Experiment.model_hash == model_hash)
+        if model_names:
+            conditions = [_prefix_filter(Experiment.model_name, n) for n in model_names]
+            stmt = stmt.where(or_(*conditions))
 
-        if experiment_group:
-            stmt = stmt.where(Experiment.experiment_group == experiment_group)
+        if model_hashes:
+            conditions = [_prefix_filter(Experiment.model_hash, h) for h in model_hashes]
+            stmt = stmt.where(or_(*conditions))
+
+        if experiment_groups:
+            conditions = [_prefix_filter(Experiment.experiment_group, g) for g in experiment_groups]
+            stmt = stmt.where(or_(*conditions))
 
         if start_time:
             stmt = stmt.where(Experiment.timestamp >= start_time)
@@ -193,24 +218,17 @@ class ExperimentRepository:
         if end_time:
             stmt = stmt.where(Experiment.timestamp <= end_time)
 
-        if task_name:
-            # Subquery to find experiment ids that have this task
-            from sqlalchemy import exists
-
+        if task_names:
+            # Subquery: experiment has ANY of these tasks (OR within list)
+            conditions = [_prefix_filter(TaskResult.task_name, t) for t in task_names]
             stmt = stmt.where(
-                exists()
-                .where(TaskResult.experiment_pk == Experiment.id)
-                .where(TaskResult.task_name == task_name)
+                exists().where(TaskResult.experiment_pk == Experiment.id).where(or_(*conditions))
             )
 
-        if task_hash:
-            # Subquery to find experiment ids that have this task hash
-            from sqlalchemy import exists
-
+        if task_hashes:
+            conditions = [_prefix_filter(TaskResult.task_hash, h) for h in task_hashes]
             stmt = stmt.where(
-                exists()
-                .where(TaskResult.experiment_pk == Experiment.id)
-                .where(TaskResult.task_hash == task_hash)
+                exists().where(TaskResult.experiment_pk == Experiment.id).where(or_(*conditions))
             )
 
         # Order by timestamp descending (most recent first)
@@ -246,11 +264,9 @@ class ExperimentRepository:
                 task_config=task.task_config,
                 num_instances=task.num_instances,
                 primary_metric=task.primary_metric,
-                primary_score=task.primary_score,
                 s3_metrics_key=task.s3_metrics_key,
                 s3_predictions_key=task.s3_predictions_key,
                 s3_requests_key=task.s3_requests_key,
-                agent=AgentMetrics.from_dict(task.agent_metrics) if task.agent_metrics else None,
                 duration_seconds=task.duration_seconds,
             )
             for task in experiment.task_results
@@ -347,7 +363,7 @@ class InstancePredictionRepository:
             stmt = stmt.where(InstancePrediction.experiment_pk == experiment_pk)
 
         if task_hash:
-            stmt = stmt.where(InstancePrediction.task_hash == task_hash)
+            stmt = stmt.where(_prefix_filter(InstancePrediction.task_hash, task_hash))
 
         if task_name:
             # JOIN to task_results to filter by task_name
@@ -357,9 +373,10 @@ class InstancePredictionRepository:
                 & (TaskResult.task_hash == InstancePrediction.task_hash),
             )
             if isinstance(task_name, list):
-                stmt = stmt.where(TaskResult.task_name.in_(task_name))
+                conditions = [_prefix_filter(TaskResult.task_name, t) for t in task_name]
+                stmt = stmt.where(or_(*conditions))
             else:
-                stmt = stmt.where(TaskResult.task_name == task_name)
+                stmt = stmt.where(_prefix_filter(TaskResult.task_name, task_name))
 
         stmt = stmt.order_by(InstancePrediction.id)
 
@@ -408,9 +425,10 @@ class InstancePredictionRepository:
 
         if task_name:
             if isinstance(task_name, list):
-                stmt = stmt.where(TaskResult.task_name.in_(task_name))
+                conditions = [_prefix_filter(TaskResult.task_name, t) for t in task_name]
+                stmt = stmt.where(or_(*conditions))
             else:
-                stmt = stmt.where(TaskResult.task_name == task_name)
+                stmt = stmt.where(_prefix_filter(TaskResult.task_name, task_name))
 
         stmt = stmt.order_by(InstancePrediction.id)
 
@@ -471,16 +489,17 @@ class InstancePredictionRepository:
             stmt = stmt.where(InstancePrediction.id > after_id)
 
         if model_name:
-            stmt = stmt.where(Experiment.model_name == model_name)
+            stmt = stmt.where(_prefix_filter(Experiment.model_name, model_name))
 
         if model_hash:
-            stmt = stmt.where(Experiment.model_hash == model_hash)
+            stmt = stmt.where(_prefix_filter(Experiment.model_hash, model_hash))
 
         if task_name:
             if isinstance(task_name, list):
-                stmt = stmt.where(TaskResult.task_name.in_(task_name))
+                conditions = [_prefix_filter(TaskResult.task_name, t) for t in task_name]
+                stmt = stmt.where(or_(*conditions))
             else:
-                stmt = stmt.where(TaskResult.task_name == task_name)
+                stmt = stmt.where(_prefix_filter(TaskResult.task_name, task_name))
 
         stmt = stmt.order_by(InstancePrediction.id)
 
@@ -534,13 +553,14 @@ class InstancePredictionRepository:
             stmt = stmt.where(InstancePrediction.id > after_id)
 
         if task_hash:
-            stmt = stmt.where(InstancePrediction.task_hash == task_hash)
+            stmt = stmt.where(_prefix_filter(InstancePrediction.task_hash, task_hash))
 
         if task_name:
             if isinstance(task_name, list):
-                stmt = stmt.where(TaskResult.task_name.in_(task_name))
+                conditions = [_prefix_filter(TaskResult.task_name, t) for t in task_name]
+                stmt = stmt.where(or_(*conditions))
             else:
-                stmt = stmt.where(TaskResult.task_name == task_name)
+                stmt = stmt.where(_prefix_filter(TaskResult.task_name, task_name))
 
         stmt = stmt.order_by(InstancePrediction.id)
 
@@ -583,7 +603,7 @@ class InstancePredictionRepository:
         model_names: list[str] | None = None,
         model_hashes: list[str] | None = None,
         task_names: list[str] | None = None,
-        task_hash: str | None = None,
+        task_hashes: list[str] | None = None,
         limit: int | None = None,
         after_id: int | None = None,
     ) -> list[dict[str, Any]]:
@@ -597,7 +617,7 @@ class InstancePredictionRepository:
             model_names: Filter by model names.
             model_hashes: Filter by model hashes.
             task_names: Filter by task names.
-            task_hash: Filter by exact task hash.
+            task_hashes: Filter by task hash prefixes (OR within list).
             limit: Maximum number of results.
             after_id: Return instances with id > after_id (keyset pagination).
 
@@ -636,16 +656,20 @@ class InstancePredictionRepository:
             stmt = stmt.where(Experiment.experiment_id.in_(experiment_ids))
 
         if model_names:
-            stmt = stmt.where(Experiment.model_name.in_(model_names))
+            name_conditions = [_prefix_filter(Experiment.model_name, n) for n in model_names]
+            stmt = stmt.where(or_(*name_conditions))
 
         if model_hashes:
-            stmt = stmt.where(Experiment.model_hash.in_(model_hashes))
+            hash_conditions = [_prefix_filter(Experiment.model_hash, h) for h in model_hashes]
+            stmt = stmt.where(or_(*hash_conditions))
 
-        if task_hash:
-            stmt = stmt.where(InstancePrediction.task_hash == task_hash)
+        if task_hashes:
+            hash_conditions = [_prefix_filter(InstancePrediction.task_hash, h) for h in task_hashes]
+            stmt = stmt.where(or_(*hash_conditions))
 
         if task_names:
-            stmt = stmt.where(TaskResult.task_name.in_(task_names))
+            task_conditions = [_prefix_filter(TaskResult.task_name, t) for t in task_names]
+            stmt = stmt.where(or_(*task_conditions))
 
         stmt = stmt.order_by(InstancePrediction.id)
 
@@ -692,7 +716,7 @@ class InstancePredictionRepository:
         stmt = select(InstancePrediction).where(InstancePrediction.experiment_pk == experiment_pk)
 
         if task_hash:
-            stmt = stmt.where(InstancePrediction.task_hash == task_hash)
+            stmt = stmt.where(_prefix_filter(InstancePrediction.task_hash, task_hash))
 
         stmt = stmt.order_by(InstancePrediction.id)
 
@@ -701,7 +725,7 @@ class InstancePredictionRepository:
 
     def stream_instances_with_metadata(
         self,
-        experiment_group: str | None = None,
+        experiment_groups: list[str] | None = None,
         experiment_pk: int | None = None,
         model_hashes: list[str] | None = None,
         task_hashes: list[str] | None = None,
@@ -713,7 +737,7 @@ class InstancePredictionRepository:
         Uses server-side cursor for constant memory usage.
 
         Args:
-            experiment_group: Filter by experiment group.
+            experiment_groups: Filter by experiment group prefixes (OR within list).
             experiment_pk: Filter by experiment primary key.
             model_hashes: Filter by model hash(es).
             task_hashes: Filter by task hash(es).
@@ -722,8 +746,6 @@ class InstancePredictionRepository:
         Yields:
             SQLAlchemy Row objects with instance and metadata fields.
         """
-        from sqlalchemy import and_
-
         # Build query with JOINs to get metadata
         stmt = (
             select(
@@ -748,14 +770,19 @@ class InstancePredictionRepository:
         )
 
         # Apply filters
-        if experiment_group:
-            stmt = stmt.where(InstancePrediction.experiment_group == experiment_group)
+        if experiment_groups:
+            conditions = [
+                _prefix_filter(InstancePrediction.experiment_group, g) for g in experiment_groups
+            ]
+            stmt = stmt.where(or_(*conditions))
         if experiment_pk:
             stmt = stmt.where(InstancePrediction.experiment_pk == experiment_pk)
         if model_hashes:
-            stmt = stmt.where(Experiment.model_hash.in_(model_hashes))
+            hash_conditions = [_prefix_filter(Experiment.model_hash, h) for h in model_hashes]
+            stmt = stmt.where(or_(*hash_conditions))
         if task_hashes:
-            stmt = stmt.where(InstancePrediction.task_hash.in_(task_hashes))
+            hash_conditions = [_prefix_filter(InstancePrediction.task_hash, h) for h in task_hashes]
+            stmt = stmt.where(or_(*hash_conditions))
 
         # Sort for single-pass grouping, stream with server-side cursor
         stmt = stmt.order_by(

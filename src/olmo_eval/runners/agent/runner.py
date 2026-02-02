@@ -198,9 +198,14 @@ class AgentEvalRunner(RunnerResultsMixin, BaseEvalRunner):
                 task = get_task(spec)
                 first_instance = next(iter(task.instances), None)
                 if first_instance:
+                    # Get native_id from instance metadata
+                    native_id = first_instance.metadata.get("id", "0")
+
                     if self.inspect_instance:
                         console.print()
-                        inspect_instance(first_instance, console=console, task_name=spec, index=0)
+                        inspect_instance(
+                            first_instance, console=console, task_name=spec, native_id=native_id
+                        )
 
                     # Get request for inspection
                     if self.inspect_request or (
@@ -212,7 +217,8 @@ class AgentEvalRunner(RunnerResultsMixin, BaseEvalRunner):
                             inspect_request(
                                 request,
                                 console=console,
-                                title=f"[bold]Request[/bold] ({spec})",
+                                task_name=spec,
+                                native_id=native_id,
                             )
 
                         if tokenizer and self.inspect_formatted:
@@ -221,7 +227,8 @@ class AgentEvalRunner(RunnerResultsMixin, BaseEvalRunner):
                                 inspect_formatted_request(
                                     formatted_prompt,
                                     console=console,
-                                    title=f"[bold]Formatted Prompt[/bold] ({spec})",
+                                    task_name=spec,
+                                    native_id=native_id,
                                 )
                             except Exception as e:
                                 console.print(f"[red]Error formatting request:[/red] {e}")
@@ -233,7 +240,8 @@ class AgentEvalRunner(RunnerResultsMixin, BaseEvalRunner):
                                     tokens,
                                     tokenizer,
                                     console=console,
-                                    title=f"[bold]Token IDs[/bold] ({spec})",
+                                    task_name=spec,
+                                    native_id=native_id,
                                 )
                             except Exception as e:
                                 console.print(f"[red]Error tokenizing request:[/red] {e}")
@@ -259,12 +267,10 @@ class AgentEvalRunner(RunnerResultsMixin, BaseEvalRunner):
             if self.save_requests and task_result.requests:
                 self._write_requests(display_model_name, spec, task_result.requests, task_hash)
 
-            # Log metrics (for Beaker job details)
-            if task_result.metrics:
-                logger.info(f"** Task metrics for {spec}: **")
-                for metric, value in task_result.metrics.items():
-                    logger.info(f"  {metric}: {value:.4f}")
-                    console.print(f"  {metric}: {value:.4f}")
+            # Log task metrics
+            from olmo_eval.runners.common import log_task_metrics
+
+            log_task_metrics(task_result.metrics, spec, logger, console)
 
         # Compute suite aggregations
         suite_aggs = compute_suite_aggregations(self.task_specs, results["tasks"])
