@@ -175,34 +175,26 @@ class C4100K(C4100KTask):
 register_variant(
     "c4",
     "ppl",
-    scorers=(PerplexityScorer(),),
     metrics=(CorpusPerplexityMetric(),),
-    primary_metric=CorpusPerplexityMetric(),
 )
 
 
 register_variant(
     "c4_1k",
     "ppl",
-    scorers=(PerplexityScorer(),),
     metrics=(CorpusPerplexityMetric(),),
-    primary_metric=CorpusPerplexityMetric(),
 )
 
 
 register_variant(
     "c4_10k",
     "ppl",
-    scorers=(PerplexityScorer(),),
     metrics=(CorpusPerplexityMetric(),),
-    primary_metric=CorpusPerplexityMetric(),
 )
 
 
 register_variant(
     "c4_100k",
     "ppl",
-    scorers=(PerplexityScorer(),),
     metrics=(CorpusPerplexityMetric(),),
-    primary_metric=CorpusPerplexityMetric(),
 )
