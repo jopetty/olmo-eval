@@ -3,13 +3,12 @@
 from collections.abc import Iterator, Sequence
 from typing import Any
 
-from olmo_eval.core import (
-    BitsPerByteScorer,
-    BPBMetric,
+from olmo_eval.core.formatters import CompletionFormatter, PPLFormatter
+from olmo_eval.core.metrics import BPBMetric
+from olmo_eval.core.types import (
     Instance,
     LMOutput,
     LMRequest,
-    PPLFormatter,
     RequestType,
     Response,
     SamplingParams,
@@ -96,10 +95,6 @@ class HumanEvalTask(Task):
                     output.extracted_answer = response.instance.metadata["answer_prefix"] + code
                 else:
                     output.extracted_answer = None
-            # Apply each scorer, taking best score across outputs (for multi-sample)
-            for scorer in self.config.scorers:
-                scores = [scorer.score(response.instance, o) for o in response.outputs]
-                response.scores[scorer.name] = max(scores) if scores else 0.0
         return responses
 
 
@@ -118,7 +113,6 @@ def _humaneval_config() -> TaskConfig:
     return TaskConfig(
         name="humaneval",
         data_source=DataSource(path="openai_humaneval"),
-        scorers=(),
         metrics=(),
         sampling_params=SamplingParams(
             max_tokens=1024,
@@ -132,7 +126,6 @@ def _humaneval_plus_config() -> TaskConfig:
     return TaskConfig(
         name="humaneval_plus",
         data_source=DataSource(path="evalplus/humanevalplus"),
-        scorers=(),
         metrics=(),
         sampling_params=SamplingParams(
             max_tokens=1024,
@@ -172,7 +165,6 @@ register_variant(
     "humaneval",
     "bpb",
     formatter=PPLFormatter(leading_space=True, answer_prefix=" "),
-    scorers=(BitsPerByteScorer(),),
     metrics=(BPBMetric(),),
     primary_metric=BPBMetric(),
 )
@@ -181,7 +173,6 @@ register_variant(
     "humaneval_plus",
     "bpb",
     formatter=PPLFormatter(leading_space=True, answer_prefix=" "),
-    scorers=(BitsPerByteScorer(),),
     metrics=(BPBMetric(),),
     primary_metric=BPBMetric(),
 )
@@ -193,6 +184,7 @@ register_variant(
     "3shot",
     num_fewshot=3,
     fewshot_seed=1234,
+    formatter=CompletionFormatter(),
 )
 
 register_variant(
@@ -200,4 +192,5 @@ register_variant(
     "3shot",
     num_fewshot=3,
     fewshot_seed=1234,
+    formatter=CompletionFormatter(),
 )

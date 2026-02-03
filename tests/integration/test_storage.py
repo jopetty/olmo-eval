@@ -101,7 +101,7 @@ class TestPostgresBackend:
         """Test that same model config produces same model_hash across different experiments."""
         from datetime import datetime
 
-        from olmo_eval.core import EvalResult, StoredTaskResult
+        from olmo_eval.core.types import EvalResult, StoredTaskResult
         from olmo_eval.storage import compute_model_hash
 
         # Same config, different authors
@@ -115,10 +115,9 @@ class TestPostgresBackend:
             tasks=[
                 StoredTaskResult(
                     task_name="mmlu",
-                    metrics={"accuracy": 0.65},
+                    metrics={"accuracy": {"exact_match": 0.65}},
                     task_hash="mmlu-hash-user1",
-                    primary_metric="accuracy",
-                    primary_score=0.65,
+                    primary_metric="accuracy:exact_match",
                 )
             ],
             model_config=config,
@@ -137,10 +136,9 @@ class TestPostgresBackend:
             tasks=[
                 StoredTaskResult(
                     task_name="mmlu",
-                    metrics={"accuracy": 0.66},
+                    metrics={"accuracy": {"exact_match": 0.66}},
                     task_hash="mmlu-hash-user2",
-                    primary_metric="accuracy",
-                    primary_score=0.66,
+                    primary_metric="accuracy:exact_match",
                 )
             ],
             model_config=config,
@@ -180,14 +178,14 @@ class TestPostgresBackend:
             assert exp1.experiment_id != exp2.experiment_id
             assert exp1.author != exp2.author
 
-            # And different results
-            assert exp1.task_results[0].primary_score == 0.65
-            assert exp2.task_results[0].primary_score == 0.66
+            # And different metrics (nested structure)
+            assert exp1.task_results[0].metrics["accuracy"]["exact_match"] == 0.65
+            assert exp2.task_results[0].metrics["accuracy"]["exact_match"] == 0.66
 
     @pytest.mark.integration
     def test_get_all_returns_multiple_experiments(self, postgres_backend):
         """Test that get_all() returns all experiments with shared experiment_id."""
-        from olmo_eval.core import EvalResult, StoredTaskResult
+        from olmo_eval.core.types import EvalResult, StoredTaskResult
 
         # Create two experiments with the same experiment_id (simulating multi-model launch)
         shared_experiment_id = "beaker-multi-model-run"
@@ -200,10 +198,9 @@ class TestPostgresBackend:
             tasks=[
                 StoredTaskResult(
                     task_name="mmlu",
-                    metrics={"accuracy": 0.65},
+                    metrics={"accuracy": {"exact_match": 0.65}},
                     task_hash="mmlu-hash-1",
-                    primary_metric="accuracy",
-                    primary_score=0.65,
+                    primary_metric="accuracy:exact_match",
                 )
             ],
             model_config={"model": "llama3.1-8b"},
@@ -222,10 +219,9 @@ class TestPostgresBackend:
             tasks=[
                 StoredTaskResult(
                     task_name="mmlu",
-                    metrics={"accuracy": 0.75},
+                    metrics={"accuracy": {"exact_match": 0.75}},
                     task_hash="mmlu-hash-2",
-                    primary_metric="accuracy",
-                    primary_score=0.75,
+                    primary_metric="accuracy:exact_match",
                 )
             ],
             model_config={"model": "llama3.1-70b"},

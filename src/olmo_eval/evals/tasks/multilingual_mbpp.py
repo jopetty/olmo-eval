@@ -13,16 +13,9 @@ Dataset: allenai/multilingual_mbpp
 from collections.abc import Iterator
 from typing import Any
 
-from olmo_eval.core import (
-    BitsPerByteScorer,
-    BPBMetric,
-    Instance,
-    LMOutput,
-    LMRequest,
-    PPLFormatter,
-    RequestType,
-    SamplingParams,
-)
+from olmo_eval.core.formatters import PPLFormatter
+from olmo_eval.core.metrics import BPBMetric
+from olmo_eval.core.types import Instance, LMOutput, LMRequest, RequestType, SamplingParams
 from olmo_eval.data import DataLoader, DataSource
 from olmo_eval.evals.tasks.core import Task, TaskConfig, register, register_variant
 
@@ -161,7 +154,6 @@ def _make_mt_mbpp_config(language: str) -> TaskConfig:
     return TaskConfig(
         name=f"mt_mbpp_{language}",
         data_source=DataSource(path="allenai/multilingual_mbpp", subset=language),
-        scorers=(),
         metrics=(),
         sampling_params=SamplingParams(
             max_tokens=1024,
@@ -176,7 +168,6 @@ def _make_mt_mbpp_v2fix_config(language: str) -> TaskConfig:
     return TaskConfig(
         name=f"mt_mbpp_v2fix_{language}",
         data_source=DataSource(path="allenai/multilingual_mbpp", subset=language),
-        scorers=(),
         metrics=(),
         sampling_params=SamplingParams(
             max_tokens=1024,
@@ -234,7 +225,6 @@ for _lang in MULTILINGUAL_MBPP_LANGUAGES:
         "bpb",
         # Matches oe-eval: no leading space, always prepend \n\n separator
         formatter=PPLFormatter(leading_space=False, always_prepend_separator=True),
-        scorers=(BitsPerByteScorer(),),
         metrics=(BPBMetric(),),
         primary_metric=BPBMetric(),
     )
@@ -255,7 +245,6 @@ for _lang in MULTILINGUAL_MBPP_LANGUAGES:
         "bpb",
         # Matches oe-eval: no leading space, always prepend \n\n separator
         formatter=PPLFormatter(leading_space=False, always_prepend_separator=True),
-        scorers=(BitsPerByteScorer(),),
         metrics=(BPBMetric(),),
         primary_metric=BPBMetric(),
     )

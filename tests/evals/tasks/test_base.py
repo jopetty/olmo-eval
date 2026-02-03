@@ -4,16 +4,9 @@ from collections.abc import Iterator
 
 import pytest
 
-from olmo_eval.core import (
-    AccuracyMetric,
-    ExactMatchScorer,
-    Instance,
-    LMOutput,
-    LMRequest,
-    RequestType,
-    Response,
-    Split,
-)
+from olmo_eval.core.metrics import AccuracyMetric
+from olmo_eval.core.scorers import ExactMatchScorer
+from olmo_eval.core.types import Instance, LMOutput, LMRequest, RequestType, Response, Split
 from olmo_eval.evals.tasks import Task, TaskConfig
 
 
@@ -51,7 +44,6 @@ class TestTaskConfig:
         """Test that default values are set correctly."""
         config = TaskConfig(name="test", data_source="test/dataset")
         assert config.formatter is None
-        assert config.scorers == ()
         assert config.metrics == ()
         assert config.num_fewshot == 0
         assert config.fewshot_seed == 42
@@ -77,18 +69,15 @@ class TestTaskConfig:
         assert config.limit == 100
         assert config.split == Split.VALIDATION
 
-    def test_config_with_scorers_and_metrics(self):
-        """Test config with scorers and metrics."""
-        scorer = ExactMatchScorer()
+    def test_config_with_metrics(self):
+        """Test config with metrics."""
         metric = AccuracyMetric(scorer=ExactMatchScorer)
 
         config = TaskConfig(
             name="scored",
             data_source="test/dataset",
-            scorers=(scorer,),
             metrics=(metric,),
         )
-        assert len(config.scorers) == 1
         assert len(config.metrics) == 1
 
 
@@ -177,12 +166,12 @@ class TestTaskScoring:
         assert scored[0].outputs[0].extracted_answer == "4"
 
     def test_score_responses_applies_scorers(self):
-        """Test that score_responses applies all scorers."""
-        scorer = ExactMatchScorer()
+        """Test that score_responses applies scorers from metrics."""
+        metric = AccuracyMetric(scorer=ExactMatchScorer)
         config = TaskConfig(
             name="test",
             data_source="test/dataset",
-            scorers=(scorer,),
+            metrics=(metric,),
         )
         task = ConcreteTask(config)
 
@@ -201,11 +190,11 @@ class TestTaskScoring:
 
     def test_score_responses_incorrect_answer(self):
         """Test scoring with incorrect answer."""
-        scorer = ExactMatchScorer()
+        metric = AccuracyMetric(scorer=ExactMatchScorer)
         config = TaskConfig(
             name="test",
             data_source="test/dataset",
-            scorers=(scorer,),
+            metrics=(metric,),
         )
         task = ConcreteTask(config)
 
@@ -223,11 +212,11 @@ class TestTaskScoring:
 
     def test_score_responses_multiple_outputs_takes_max(self):
         """Test that scoring takes max score across multiple outputs."""
-        scorer = ExactMatchScorer()
+        metric = AccuracyMetric(scorer=ExactMatchScorer)
         config = TaskConfig(
             name="test",
             data_source="test/dataset",
-            scorers=(scorer,),
+            metrics=(metric,),
         )
         task = ConcreteTask(config)
 
@@ -257,12 +246,10 @@ class TestTaskMetrics:
 
     def test_compute_metrics(self):
         """Test compute_metrics aggregates scores."""
-        scorer = ExactMatchScorer()
         metric = AccuracyMetric(scorer=ExactMatchScorer)
         config = TaskConfig(
             name="test",
             data_source="test/dataset",
-            scorers=(scorer,),
             metrics=(metric,),
         )
         task = ConcreteTask(config)
@@ -289,11 +276,12 @@ class TestTaskMetrics:
         # Score first
         scored = task.score_responses(responses)
 
-        # Compute metrics
+        # Compute metrics (returns nested structure: {metric: {scorer: value}})
         metrics = task.compute_metrics(scored)
 
         assert "accuracy" in metrics
-        assert metrics["accuracy"] == pytest.approx(2 / 3)
+        assert "exact_match" in metrics["accuracy"]
+        assert metrics["accuracy"]["exact_match"] == pytest.approx(2 / 3)
 
     def test_compute_metrics_empty_responses(self):
         """Test compute_metrics with empty responses."""
@@ -307,5 +295,7 @@ class TestTaskMetrics:
 
         metrics = task.compute_metrics([])
 
+        # Returns nested structure: {metric: {scorer: value}}
         assert "accuracy" in metrics
-        assert metrics["accuracy"] == 0.0
+        assert "exact_match" in metrics["accuracy"]
+        assert metrics["accuracy"]["exact_match"] == 0.0

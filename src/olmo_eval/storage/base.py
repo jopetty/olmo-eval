@@ -97,6 +97,8 @@ def convert_runner_results(
     tags: list[str] | None = None,
     model_path: str | None = None,
     experiment_group: str | None = None,
+    experiment_duration_seconds: float | None = None,
+    provider_init_seconds: dict[str, float] | None = None,
 ) -> EvalResult:
     """Convert EvalRunner results dict to EvalResult.
 
@@ -136,10 +138,9 @@ def convert_runner_results(
             s3_predictions_key = f"{base}/task-{task_idx:03d}-{sanitized_spec}{PREDICTIONS_SUFFIX}"
             s3_requests_key = f"{base}/task-{task_idx:03d}-{sanitized_spec}{REQUESTS_SUFFIX}"
 
-        # Extract primary metric info
+        # Get metrics and primary_metric (in "metric:scorer" format)
         metrics = task_data.get("metrics", {})
         primary_metric = task_data.get("primary_metric")
-        primary_score = metrics.get(primary_metric) if primary_metric else None
 
         # task_hash is required
         task_hash = task_data.get("task_hash")
@@ -157,10 +158,10 @@ def convert_runner_results(
                 task_config=task_config,
                 num_instances=task_data.get("num_instances"),
                 primary_metric=primary_metric,
-                primary_score=primary_score,
                 s3_metrics_key=s3_metrics_key,
                 s3_predictions_key=s3_predictions_key,
                 s3_requests_key=s3_requests_key,
+                duration_seconds=task_data.get("duration_seconds"),
             )
         )
 
@@ -182,4 +183,6 @@ def convert_runner_results(
         metadata=results.get("metadata"),
         model_path=model_path,
         experiment_group=experiment_group,
+        experiment_duration_seconds=experiment_duration_seconds,
+        provider_init_seconds=provider_init_seconds,
     )

@@ -7,10 +7,13 @@ import os
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING, Any
 
-from olmo_eval.core import LMOutput, LMRequest, SamplingParams
-from olmo_eval.core.types import LogProbEntry
+from olmo_eval.core.debug import is_debug_provider, is_debug_requests
+from olmo_eval.core.types import LMOutput, LMRequest, LogProbEntry, SamplingParams
 
 from .base import InferenceProvider
+from .tokenizer_utils import encode_context_and_continuation
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from vllm import LLM
@@ -115,8 +118,11 @@ class VLLMProvider(InferenceProvider):
                 will include this identifier.
             **engine_kwargs: Additional arguments passed to vLLM LLM engine.
         """
-        # Suppress verbose vLLM logging by default, but allow override
-        os.environ.setdefault("VLLM_LOGGING_LEVEL", "WARNING")
+        # Set vLLM logging level - DEBUG if OLMO_EVAL_DEBUG_PROVIDER=1, otherwise WARNING
+        if is_debug_provider():
+            os.environ["VLLM_LOGGING_LEVEL"] = "DEBUG"
+        else:
+            os.environ.setdefault("VLLM_LOGGING_LEVEL", "WARNING")
 
         # Configure vLLM logger with worker_id if provided
         if worker_id:
@@ -147,6 +153,10 @@ class VLLMProvider(InferenceProvider):
         if not hasattr(self, "_max_length"):
             self._max_length = self.llm.llm_engine.model_config.max_model_len
         return self._max_length
+
+    def get_tokenizer(self) -> Any:
+        """Get the tokenizer for this provider."""
+        return self.llm.get_tokenizer()
 
     def _encode_pair(self, context: str, continuation: str) -> tuple[list[int], list[int]]:
         """Encode context and continuation separately (robust to non-additive tokenization).
@@ -199,6 +209,11 @@ class VLLMProvider(InferenceProvider):
         vllm_params = self._build_sampling_params(params)
 
         prompts = [req.prompt for req in requests]
+
+        if is_debug_requests():
+            for i, prompt in enumerate(prompts):
+                logger.info(f"Prompt {i}:\n{prompt}")
+
         # Disable tqdm progress bar - we use our own worker-scoped logging
         outputs: list[RequestOutput] = self.llm.generate(prompts, vllm_params, use_tqdm=False)
 
@@ -235,15 +250,9 @@ class VLLMProvider(InferenceProvider):
         for request in requests:
             continuations = request.continuations or ()
             for continuation in continuations:
-                # Handle empty context: use BOS token as context
-                if request.prompt == "":
-                    bos_id = tokenizer.bos_token_id
-                    if bos_id is None:
-                        bos_id = tokenizer.eos_token_id
-                    context_enc = [bos_id] if bos_id is not None else []
-                    continuation_enc = tokenizer.encode(continuation, add_special_tokens=False)
-                else:
-                    context_enc, continuation_enc = self._encode_pair(request.prompt, continuation)
+                context_enc, continuation_enc = encode_context_and_continuation(
+                    tokenizer, request.prompt, continuation
+                )
 
                 # Calculate overflow and left-truncate to max_length - 1
                 full_len = len(context_enc) + len(continuation_enc)
@@ -261,6 +270,11 @@ class VLLMProvider(InferenceProvider):
         # Pass as list of dicts with prompt_token_ids key
         # Disable tqdm progress bar - we use our own worker-scoped logging
         prompts = [{"prompt_token_ids": tokens} for tokens in token_inputs]
+
+        if is_debug_requests():
+            logger.info(f"vLLM logprobs: {len(prompts)} continuations")
+            logger.info(f"Sampling params: {vllm_params}")
+
         outputs: list[RequestOutput] = self.llm.generate(prompts, vllm_params, use_tqdm=False)
 
         # Parse results back to per-request structure
@@ -364,7 +378,11 @@ class AsyncVLLMProvider:
                 will include this identifier.
             **engine_kwargs: Additional arguments passed to vLLM engine.
         """
-        os.environ.setdefault("VLLM_LOGGING_LEVEL", "WARNING")
+        # Set vLLM logging level - DEBUG if OLMO_EVAL_DEBUG_PROVIDER=1, otherwise WARNING
+        if is_debug_provider():
+            os.environ["VLLM_LOGGING_LEVEL"] = "DEBUG"
+        else:
+            os.environ.setdefault("VLLM_LOGGING_LEVEL", "WARNING")
 
         # Configure vLLM logger with worker_id if provided
         if worker_id:
@@ -442,7 +460,7 @@ class AsyncVLLMProvider:
         Raises:
             ValueError: If request type is LOGLIKELIHOOD (not supported in streaming mode).
         """
-        from olmo_eval.core import RequestType
+        from olmo_eval.core.types import RequestType
 
         # Streaming backend only supports COMPLETION requests
         # LOGLIKELIHOOD/BPB tasks require prompt_logprobs which isn't supported here

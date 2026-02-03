@@ -6,14 +6,15 @@ evaluation experiments from YAML files.
 Example config (eval_config.yaml):
     name: eval-llama-suite
     models:
-      - llama3.1-8b
-      - olmo-2-7b
+      - name_or_path: llama3.1-8b
+        gpus: 1
+      - name_or_path: olmo-2-7b
+        gpus: 1
     tasks:
       - mmlu
       - gsm8k
       - hellaswag
     cluster: h100
-    gpus: 1
     priority: normal
 
 Example with per-model resources:
@@ -32,7 +33,7 @@ Example with per-model resources:
 Example usage:
     config = EvalConfig.from_yaml("eval_config.yaml")
     # Or with CLI overrides:
-    config = EvalConfig.from_yaml("eval_config.yaml", overrides=["gpus=4", "priority=high"])
+    config = EvalConfig.from_yaml("eval_config.yaml", overrides=["priority=high"])
 """
 
 from __future__ import annotations
@@ -44,35 +45,44 @@ from typing import Any
 from omegaconf import MISSING, OmegaConf
 
 from olmo_eval.core.constants.infrastructure import DEFAULT_MAX_GPUS_PER_NODE
+from olmo_eval.core.types import RunnerType
 
 
 @dataclass
-class ModelConfig:
-    """Configuration for a single model with optional resource overrides for Beaker launch.
+class ProviderConfig:
+    """Configuration for the inference provider to install at runtime.
+
+    Attributes:
+        name: Provider name ("vllm", "hf", "litellm"). Maps to pyproject.toml extras.
+        package: Optional custom package specifier (URL, path, or PyPI version).
+                 If set, installed after base extras to override default version.
+    """
+
+    name: str = "vllm"
+    package: str | None = None
+
+
+@dataclass
+class BeakerModelSpec:
+    """Specification for a single model with resource settings for Beaker launch.
 
     This allows specifying per-model resources for mixed-size evaluations.
-
-    Note: There are multiple ModelConfig classes with different purposes:
-    - core/configs.py:ModelConfig - Core model config for inference
-    - launch/config.py:ModelConfig (this one) - Beaker launch config with resource settings
-    - runners/mixins.py:ModelConfig - Metrics output format for JSON serialization
 
     Attributes:
         name_or_path: Model name, HuggingFace path, or local checkpoint path (required).
         alias: Optional short name for experiment naming. If not set, a short name
             is derived from name_or_path (last path component, or last 16 chars for long paths).
-        gpus: Number of GPUs per model instance (overrides default).
+        gpus: Number of GPUs per model instance. Defaults to 1.
         parallelism: Number of model instances to run in parallel. Total GPUs
-            requested will be gpus × parallelism.
+            requested will be gpus × parallelism. Defaults to 1.
         cluster: Cluster for this model (overrides default).
         preemptible: Whether this model's jobs can be preempted.
         timeout: Timeout for this model's jobs.
         shared_memory: Shared memory size (e.g., "10GiB").
-        use_async: Enable parallel task execution (overrides default).
-        use_async_stream: Enable streaming async with vLLM (overrides default).
+        runner_type: Runner type (sync, async, async-stream, agent). Overrides default.
         num_workers: Number of workers for async modes (overrides default).
         gpus_per_worker: GPUs per worker for async modes (overrides default).
-        provider: Inference provider to install for this model (e.g., "vllm").
+        provider: Inference provider configuration (ProviderConfig with name and optional package).
         load_format: vLLM model loading format (e.g., "runai_streamer" for distributed loading).
         extra_loader_config: Extra config for model loader (e.g., {"distributed": true}).
 
@@ -81,18 +91,24 @@ class ModelConfig:
           - name_or_path: llama3.1-8b
             gpus: 1
             parallelism: 4  # 4 instances × 1 GPU = 4 GPUs total
-            provider: vllm==0.13.0
+            provider:
+              name: vllm
+              package: vllm==0.14.0  # Custom version
           - name_or_path: /weka/checkpoints/my-model/step1000-hf
             alias: my-model-1k  # Short name for experiment naming
             gpus: 4
             parallelism: 2  # 2 instances × 4 GPUs = 8 GPUs total
-            provider: transformers
-            use_async: true
+            provider:
+              name: vllm
+              package: https://github.com/davidheineman/vllm@my-branch
+            runner_type: async
             num_workers: 2
             gpus_per_worker: 4
             timeout: 48h
           - name_or_path: llama3.1-70b
             gpus: 4
+            provider:
+              name: vllm
             load_format: runai_streamer  # Use distributed streaming loader
             extra_loader_config:
               distributed: true
@@ -101,75 +117,112 @@ class ModelConfig:
 
     name_or_path: str = MISSING
     alias: str | None = None
-    gpus: int | None = None
-    parallelism: int | None = None
+    gpus: int = 1
+    parallelism: int = 1
     cluster: str | None = None
     preemptible: bool | None = None
     timeout: str | None = None
     shared_memory: str | None = None
 
-    # Async execution settings
-    use_async: bool | None = None
-    use_async_stream: bool | None = None
+    # Runner type (sync, async, async-stream, agent)
+    runner_type: str | None = None  # String for OmegaConf compatibility
     num_workers: int | None = None
     gpus_per_worker: int | None = None
 
     # Runtime inference provider installation
-    provider: str | None = None
+    provider: ProviderConfig | None = None
 
     # vLLM model loading configuration
     load_format: str | None = None
     extra_loader_config: dict[str, Any] | None = None  # e.g., {"distributed": true}
 
 
-def parse_model_config(model: str | dict[str, Any] | ModelConfig) -> ModelConfig:
-    """Parse a model specification into ModelConfig.
+def apply_overrides_to_model(name_or_path: str, overrides: list[str]) -> BeakerModelSpec:
+    """Create BeakerModelSpec with OmegaConf overrides.
 
-    Handles both simple string format and detailed dict/ModelConfig format.
-    Inline overrides (::key=value) are parsed and applied to matching ModelConfig fields.
+    This is the preferred way to apply overrides from the -o CLI flag.
 
     Args:
-        model: Model name/path string, dict with model config, or ModelConfig.
+        name_or_path: Model name or path.
+        overrides: List of override strings in dotlist format (e.g., ["provider.name=vllm"]).
 
     Returns:
-        ModelConfig instance with any inline overrides applied.
+        BeakerModelSpec instance with overrides applied.
+
+    Examples:
+        >>> apply_overrides_to_model("llama3.1-8b", ["provider.name=vllm", "gpus=4"])
+        BeakerModelSpec(name_or_path='llama3.1-8b', provider=ProviderConfig(name='vllm'), gpus=4)
+    """
+    config_dict: dict[str, Any] = {"name_or_path": name_or_path}
+
+    if overrides:
+        # Direct to OmegaConf - no custom parsing!
+        override_config = OmegaConf.from_dotlist(overrides)
+        override_dict = OmegaConf.to_container(override_config)
+        config_dict.update(override_dict)  # type: ignore[arg-type]
+
+    schema = OmegaConf.structured(BeakerModelSpec)
+    merged = OmegaConf.merge(schema, OmegaConf.create(config_dict))
+    return OmegaConf.to_object(merged)  # type: ignore[return-value]
+
+
+def parse_model_config(
+    model: str | dict[str, Any] | BeakerModelSpec,
+    overrides: list[str] | None = None,
+) -> BeakerModelSpec:
+    """Parse a model specification into BeakerModelSpec.
+
+    Handles simple string format, dict format, or existing BeakerModelSpec.
+    Use the `overrides` parameter to apply CLI overrides from the -o flag.
+
+    Args:
+        model: Model name/path string, dict with model config, or BeakerModelSpec.
+        overrides: Optional list of override strings in dotlist format
+            (e.g., ["provider.name=vllm"]).
+
+    Returns:
+        BeakerModelSpec instance with any overrides applied.
 
     Examples:
         parse_model_config("llama3.1-8b")
+        parse_model_config("llama3.1-8b", overrides=["provider.name=vllm", "gpus=4"])
         parse_model_config({"name_or_path": "llama3.1-70b", "gpus": 4})
-        parse_model_config("llama3.1-8b::provider=vllm,load_format=auto")
     """
-    if isinstance(model, ModelConfig):
+    if isinstance(model, BeakerModelSpec):
+        if overrides:
+            config_dict = OmegaConf.to_container(OmegaConf.structured(model))
+            override_config = OmegaConf.from_dotlist(overrides)
+            override_dict = OmegaConf.to_container(override_config)
+            config_dict.update(override_dict)  # type: ignore[union-attr]
+            schema = OmegaConf.structured(BeakerModelSpec)
+            merged = OmegaConf.merge(schema, OmegaConf.create(config_dict))
+            return OmegaConf.to_object(merged)  # type: ignore[return-value]
         return model
+
     if isinstance(model, str):
-        from olmo_eval.evals.tasks.core.registry import parse_overrides
-
-        # Parse inline overrides (::key=value) from model spec
-        name_or_path, _, override_str = model.partition("::")
-        overrides = parse_overrides(override_str) if override_str else {}
-
-        # Map inline overrides to ModelConfig fields
-        config_kwargs: dict[str, Any] = {"name_or_path": name_or_path}
-
-        # Fields that can be set via inline overrides
-        if "provider" in overrides:
-            config_kwargs["provider"] = overrides["provider"]
-        if "load_format" in overrides:
-            config_kwargs["load_format"] = overrides["load_format"]
-        if "gpus_per_worker" in overrides:
-            config_kwargs["gpus_per_worker"] = int(overrides["gpus_per_worker"])
-        if "extra_loader_config" in overrides:
-            config_kwargs["extra_loader_config"] = overrides["extra_loader_config"]
-
-        return ModelConfig(**config_kwargs)
-    if isinstance(model, dict):
-        schema = OmegaConf.structured(ModelConfig)
-        merged = OmegaConf.merge(schema, OmegaConf.create(model))
+        config_dict: dict[str, Any] = {"name_or_path": model}
+        if overrides:
+            override_config = OmegaConf.from_dotlist(overrides)
+            override_dict = OmegaConf.to_container(override_config)
+            config_dict.update(override_dict)  # type: ignore[arg-type]
+        schema = OmegaConf.structured(BeakerModelSpec)
+        merged = OmegaConf.merge(schema, OmegaConf.create(config_dict))
         return OmegaConf.to_object(merged)  # type: ignore[return-value]
+
+    if isinstance(model, dict):
+        config_dict = dict(model)
+        if overrides:
+            override_config = OmegaConf.from_dotlist(overrides)
+            override_dict = OmegaConf.to_container(override_config)
+            config_dict.update(override_dict)  # type: ignore[arg-type]
+        schema = OmegaConf.structured(BeakerModelSpec)
+        merged = OmegaConf.merge(schema, OmegaConf.create(config_dict))
+        return OmegaConf.to_object(merged)  # type: ignore[return-value]
+
     raise TypeError(f"Invalid model specification: {type(model)}")
 
 
-def get_model_short_name(model: ModelConfig) -> str:
+def get_model_short_name(model: BeakerModelSpec) -> str:
     """Get a short display name for a model suitable for experiment naming.
 
     If alias is set, returns the alias. Otherwise derives a short name from
@@ -177,20 +230,22 @@ def get_model_short_name(model: ModelConfig) -> str:
     or longer than 32 characters, takes the last 16 characters of the path.
 
     Args:
-        model: ModelConfig instance.
+        model: BeakerModelSpec instance.
 
     Returns:
         Short name suitable for use in experiment names.
 
     Examples:
-        >>> get_model_short_name(ModelConfig(name_or_path="llama3.1-8b"))
+        >>> get_model_short_name(BeakerModelSpec(name_or_path="llama3.1-8b"))
         'llama3.1-8b'
-        >>> get_model_short_name(ModelConfig(name_or_path="meta-llama/Llama-3.1-8B"))
+        >>> get_model_short_name(BeakerModelSpec(name_or_path="meta-llama/Llama-3.1-8B"))
         'llama-3.1-8b'
-        >>> get_model_short_name(ModelConfig(name_or_path="/weka/checkpoints/model/step1000-hf/"))
+        >>> get_model_short_name(
+        ...     BeakerModelSpec(name_or_path="/weka/checkpoints/model/step1000-hf/")
+        ... )
         'step1000-hf'
         >>> get_model_short_name(
-        ...     ModelConfig(name_or_path="/weka/checkpoints/model/", alias="my-model")
+        ...     BeakerModelSpec(name_or_path="/weka/checkpoints/model/", alias="my-model")
         ... )
         'my-model'
     """
@@ -215,17 +270,15 @@ def get_model_short_name(model: ModelConfig) -> str:
 def _shorten_task_name(task: str, max_len: int = 8) -> str:
     """Shorten a single task name for use in experiment naming.
 
-    Removes common suffixes and prefixes, strips variants (after ':' or '::'),
+    Removes common suffixes and prefixes, strips variants (after ':'),
     and truncates to max_len characters.
     """
     # Strip @priority suffix if present
     if "@" in task:
         task = task.split("@")[0]
 
-    # Strip variant/regime suffix (e.g., "mmlu::olmes" -> "mmlu", "arc:mc" -> "arc")
-    if "::" in task:
-        task = task.split("::")[0]
-    elif ":" in task:
+    # Strip variant suffix (e.g., "arc:mc" -> "arc")
+    if ":" in task:
         task = task.split(":")[0]
 
     # Remove common suffixes/prefixes
@@ -247,7 +300,7 @@ def get_tasks_short_name(tasks: list[str], max_total_len: int = 24) -> str:
     - 4+ tasks: uses first task name + count (e.g., "mmlu_3more")
 
     Args:
-        tasks: List of task names (may include @priority or ::variant suffixes).
+        tasks: List of task names (may include @priority or :variant suffixes).
         max_total_len: Maximum length of the returned string.
 
     Returns:
@@ -291,7 +344,7 @@ class EvalConfig:
 
     Models can be specified as simple strings or with per-model resource overrides:
 
-        # Simple format
+        # Simple format (uses default gpus=1, parallelism=1)
         models:
           - llama3.1-8b
           - olmo-2-7b
@@ -306,14 +359,13 @@ class EvalConfig:
 
     Attributes:
         name: Experiment name (required).
-        models: List of model names/paths or ModelConfig dicts (required).
+        models: List of model names/paths or BeakerModelSpec dicts (required).
             Each model can specify its own inference provider via the 'provider' field.
+            GPU and parallelism settings are per-model (default 1 each).
         tasks: List of task specs, optionally with @priority suffix (required).
         cluster: Default cluster alias or full name.
-        gpus: Default number of GPUs per model instance.
-        parallelism: Default number of model instances to run in parallel.
         max_gpus_per_node: Maximum GPUs available per node. When total GPUs
-            (gpus × parallelism) exceeds this, tasks are split across experiments.
+            exceeds this, models are split across experiments.
         priority: Default job priority for tasks without @priority suffix.
         preemptible: Default preemption setting.
         timeout: Default job timeout (e.g., "24h", "48h").
@@ -323,22 +375,22 @@ class EvalConfig:
         beaker_image: Container image to use.
         description: Optional experiment description.
         groups: List of Beaker groups to add experiments to.
-        use_async: Enable parallel task execution with multiple workers.
-        use_async_stream: Enable streaming async with vLLM's AsyncLLMEngine (vLLM only).
+        runner_type: Default runner type (sync, async, async-stream, agent).
         num_workers: Number of workers for async modes.
         gpus_per_worker: GPUs per worker for async modes.
+        pack_models: Pack multiple models into single experiments when they fit.
+            Default False: each model runs in its own experiment for easier scheduling.
     """
 
     # Required fields
     name: str = MISSING
-    models: list[Any] = MISSING  # list[str] or list[dict] for ModelConfig
+    models: list[Any] = MISSING  # list[str] or list[dict] for BeakerModelSpec
     tasks: list[str] = MISSING
 
-    # Default cluster and resources (can be overridden per-model)
+    # Default cluster and resources
     cluster: str | None = None
-    gpus: int = 1
-    parallelism: int = 1
     max_gpus_per_node: int = DEFAULT_MAX_GPUS_PER_NODE
+    pack_models: bool = False
 
     # Default job settings (can be overridden per-model)
     priority: str = "normal"
@@ -346,9 +398,8 @@ class EvalConfig:
     timeout: str = "24h"
     retries: int | None = None
 
-    # Async execution defaults
-    use_async: bool = False
-    use_async_stream: bool = False
+    # Runner type and worker settings
+    runner_type: str = RunnerType.SYNC.value  # String for OmegaConf compatibility
     num_workers: int | None = None
     gpus_per_worker: int = 1
 
@@ -359,22 +410,22 @@ class EvalConfig:
     description: str | None = None
     groups: list[str] | None = None  # Groups to add experiments to
 
-    def get_model_configs(self) -> list[ModelConfig]:
-        """Get parsed ModelConfig objects for all models.
+    def get_model_configs(self) -> list[BeakerModelSpec]:
+        """Get parsed BeakerModelSpec objects for all models.
 
-        Returns a list of ModelConfig objects, parsing simple strings
-        into ModelConfig with just the name set.
+        Returns a list of BeakerModelSpec objects, parsing simple strings
+        into BeakerModelSpec with just the name set.
 
         Returns:
-            List of ModelConfig objects.
+            List of BeakerModelSpec objects.
         """
         return [parse_model_config(m) for m in self.models]
 
-    def get_model_resources(self, model: ModelConfig) -> dict[str, Any]:
+    def get_model_resources(self, model: BeakerModelSpec) -> dict[str, Any]:
         """Get effective resources for a model, merging defaults with overrides.
 
         Args:
-            model: ModelConfig with optional resource overrides.
+            model: BeakerModelSpec with resource settings.
 
         Returns:
             Dict with effective resource values including:
@@ -382,24 +433,28 @@ class EvalConfig:
             - parallelism: Number of model instances to run
             - Other resource settings (cluster, timeout, etc.)
         """
-        # Determine async settings
-        use_async = model.use_async if model.use_async is not None else self.use_async
-        use_async_stream = (
-            model.use_async_stream if model.use_async_stream is not None else self.use_async_stream
-        )
+        # Determine runner type (model overrides config default)
+        runner_type_str = model.runner_type if model.runner_type is not None else self.runner_type
+        runner_type = RunnerType(runner_type_str)
+
         num_workers = model.num_workers if model.num_workers is not None else self.num_workers
         gpus_per_worker = (
             model.gpus_per_worker if model.gpus_per_worker is not None else self.gpus_per_worker
         )
 
         # Calculate GPUs per model instance
-        if (use_async or use_async_stream) and num_workers is not None:
+        # For async modes, GPUs are calculated from workers
+        if runner_type in (RunnerType.ASYNC, RunnerType.ASYNC_STREAM) and num_workers is not None:
             gpus_per_model = num_workers * gpus_per_worker
         else:
-            gpus_per_model = model.gpus if model.gpus is not None else self.gpus
+            gpus_per_model = model.gpus
 
-        # Determine parallelism
-        parallelism = model.parallelism if model.parallelism is not None else self.parallelism
+        # Parallelism is always per-model (default 1)
+        parallelism = model.parallelism
+
+        # Extract provider name and package from ProviderConfig
+        provider_name = model.provider.name if model.provider else None
+        provider_package = model.provider.package if model.provider else None
 
         return {
             "gpus": gpus_per_model,
@@ -408,11 +463,11 @@ class EvalConfig:
             "preemptible": model.preemptible if model.preemptible is not None else self.preemptible,
             "timeout": model.timeout if model.timeout is not None else self.timeout,
             "shared_memory": model.shared_memory,  # None uses BeakerJobConfig default
-            "use_async": use_async,
-            "use_async_stream": use_async_stream,
+            "runner_type": runner_type,
             "num_workers": num_workers,
             "gpus_per_worker": gpus_per_worker,
-            "provider": model.provider,
+            "provider": provider_name,
+            "provider_package": provider_package,
             "load_format": model.load_format,
             "extra_loader_config": model.extra_loader_config,
         }
@@ -427,13 +482,14 @@ class EvalConfig:
 
         Args:
             path: Path to YAML configuration file.
-            overrides: Optional list of dotlist overrides (e.g., ["gpus=4", "priority=high"]).
+            overrides: Optional list of dotlist overrides (e.g., ["priority=high"]).
 
         Returns:
             EvalConfig instance with merged configuration.
 
         Raises:
             FileNotFoundError: If the config file doesn't exist.
+            ValueError: If deprecated top-level gpus/parallelism fields are used.
             omegaconf.errors.MissingMandatoryValue: If required fields are missing.
 
         Example:
@@ -443,7 +499,7 @@ class EvalConfig:
             # Load with overrides
             config = EvalConfig.from_yaml(
                 "eval_config.yaml",
-                overrides=["gpus=4", "cluster=a100"]
+                overrides=["priority=high", "cluster=a100"]
             )
         """
         path = Path(path)
@@ -452,6 +508,26 @@ class EvalConfig:
 
         # Load YAML file
         file_config = OmegaConf.load(path)
+
+        # Check for deprecated top-level gpus/parallelism fields
+        file_dict = OmegaConf.to_container(file_config) if file_config else {}
+        if isinstance(file_dict, dict):
+            if "gpus" in file_dict:
+                raise ValueError(
+                    "Top-level 'gpus' is no longer supported. "
+                    "Specify gpus per-model instead:\n\n"
+                    "  models:\n"
+                    "    - name_or_path: your-model\n"
+                    "      gpus: 4\n"
+                )
+            if "parallelism" in file_dict:
+                raise ValueError(
+                    "Top-level 'parallelism' is no longer supported. "
+                    "Specify parallelism per-model instead:\n\n"
+                    "  models:\n"
+                    "    - name_or_path: your-model\n"
+                    "      parallelism: 4\n"
+                )
 
         # Create structured config with defaults
         schema = OmegaConf.structured(cls)
@@ -497,60 +573,3 @@ class EvalConfig:
             Path(path).write_text(yaml_str)
 
         return yaml_str
-
-
-# Pre-defined configuration templates
-TEMPLATES: dict[str, dict[str, Any]] = {
-    "quick": {
-        "cluster": "h100",
-        "gpus": 1,
-        "priority": "normal",
-        "timeout": "4h",
-        "preemptible": True,
-    },
-    "standard": {
-        "cluster": "h100",
-        "gpus": 1,
-        "priority": "normal",
-        "timeout": "24h",
-        "preemptible": True,
-    },
-    "large-model": {
-        "cluster": "h100",
-        "gpus": 4,
-        "priority": "high",
-        "timeout": "48h",
-        "preemptible": False,
-    },
-    "urgent": {
-        "cluster": "h100",
-        "gpus": 1,
-        "priority": "urgent",
-        "timeout": "24h",
-        "preemptible": False,
-    },
-}
-
-
-def get_template(name: str) -> dict[str, Any]:
-    """Get a pre-defined configuration template.
-
-    Available templates:
-        - quick: Fast jobs with 4h timeout
-        - standard: Normal priority, 24h timeout
-        - large-model: 4 GPUs, high priority, 48h timeout
-        - urgent: Urgent priority, non-preemptible
-
-    Args:
-        name: Template name.
-
-    Returns:
-        Dictionary with template configuration.
-
-    Raises:
-        ValueError: If template name is not found.
-    """
-    if name not in TEMPLATES:
-        available = ", ".join(TEMPLATES.keys())
-        raise ValueError(f"Unknown template '{name}'. Available: {available}")
-    return TEMPLATES[name].copy()

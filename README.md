@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/allenai/olmo-eval-internal/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/allenai/olmo-eval-internal/actions/workflows/ci.yml)
 ![Alpha](https://img.shields.io/badge/status-alpha-orange)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/allenai/olmo-eval-internal/blob/main/LICENSE)
 
 Evaluation toolkit for OLMo and other language models.
 
@@ -19,6 +20,9 @@ make setup-all
 
 # Or with specific extras
 make setup EXTRAS=beaker
+
+# For agent tasks
+make setup EXTRAS=agents
 
 # List available commands
 olmo-eval --help
@@ -63,7 +67,6 @@ from olmo_eval.evals.tasks import Task, TaskConfig, register
     name="my_task",
     data_source="hf://dataset/path",
     formatter=MultipleChoiceFormatter(),
-    scorers=(MultipleChoiceScorer(),),
     metrics=(AccuracyMetric(scorer=MultipleChoiceScorer),),
 ))
 class MyTask(Task): ...
@@ -78,6 +81,17 @@ register_regime("my_task", "olmes", num_fewshot=5, fewshot_seed=42)
 # Usage: olmo-eval run -m model -t my_task:olmes
 ```
 
+**Runtime Dependencies** allow tasks to specify packages installed at job startup:
+
+```python
+@register("code_eval", lambda: TaskConfig(
+    name="code_eval",
+    data_source="my-org/code-dataset",
+    dependencies=["code-sandbox==1.0", "git+https://github.com/user/repo@v2.0"],
+))
+class CodeEvalTask(Task): ...
+```
+
 ### Suites
 
 Suites group multiple tasks for batch evaluation:
@@ -87,7 +101,7 @@ from olmo_eval.evals.suites import Suite, register
 
 register(Suite(
     name="my_suite",
-    tasks=("task_a::olmes", "task_b::olmes", "task_c::olmes"),
+    tasks=("task_a:olmes", "task_b:olmes", "task_c:olmes"),
 ))
 ```
 
@@ -136,37 +150,45 @@ Note: Currently `AVERAGE_OF_AVERAGES` gives each child equal weight regardless o
 
 ### Formatters
 
-Formatters convert instances into LM requests. Available formatters:
+Formatters convert instances into LM requests. See `olmo_eval.core.formatters` for available options.
 
-| Formatter | Description |
-|-----------|-------------|
-| `CompletionFormatter` | Text completion with template |
-| `ChatFormatter` | Chat messages (system/user/assistant) |
-| `MultipleChoiceFormatter` | MC with continuations for logprob scoring |
-| `PPLFormatter` | Perplexity/BPB evaluation |
+```python
+from olmo_eval.core import MultipleChoiceFormatter, ChatFormatter
+
+# Multiple choice with logprob scoring
+formatter = MultipleChoiceFormatter(template="Q: {question}\n\nA:")
+
+# Chat-based formatting
+formatter = ChatFormatter(system="You are a helpful assistant.")
+```
 
 ### Scorers
 
-Scorers compute a score for each instance/output pair. Available scorers:
+Scorers compute a score for each instance/output pair. See `olmo_eval.core.scorers` for available options.
 
-| Scorer | Description |
-|--------|-------------|
-| `ExactMatchScorer` | Exact string match (1.0 or 0.0) |
-| `MultipleChoiceScorer` | Compare selected choice index/letter |
-| `F1Scorer` | Token-level F1 score |
-| `BitsPerByteScorer` | Bits per byte from logprobs |
-| `CodeExecutionScorer` | Execute code against test cases |
+```python
+from olmo_eval.core import ExactMatchScorer, MultipleChoiceScorer
+
+# Exact string match
+scorer = ExactMatchScorer()
+
+# Multiple choice comparison
+scorer = MultipleChoiceScorer()
+```
 
 ### Metrics
 
-Metrics aggregate scores across responses. Available metrics:
+Metrics aggregate scores across responses. See `olmo_eval.core.metrics` for available options.
 
-| Metric | Description |
-|--------|-------------|
-| `AccuracyMetric` | Mean accuracy for a scorer |
-| `F1Metric` | Mean F1 score |
-| `BPBMetric` | Byte-weighted bits per byte |
-| `PassAtKMetric` | Pass@k for code generation |
+```python
+from olmo_eval.core import AccuracyMetric, F1Metric
+
+# Mean accuracy
+metric = AccuracyMetric(scorer=ExactMatchScorer)
+
+# Mean F1 score
+metric = F1Metric(scorer=F1Scorer)
+```
 
 ### Model Presets
 
@@ -179,7 +201,7 @@ from olmo_eval.core import get_model_presets
 presets = get_model_presets()
 # {
 #     "llama3.1-8b": ModelConfig(model="meta-llama/Meta-Llama-3.1-8B"),
-#     "olmo-2-7b": ModelConfig(model="allenai/OLMo-2-1124-7B", trust_remote_code=True),
+#     "olmo-2-7b": ModelConfig(model="allenai/OLMo-2-1124-7B"),
 #     ...
 # }
 ```
@@ -259,7 +281,6 @@ def _my_task_config() -> TaskConfig:
         name="my_task",
         data_source=DataSource(path="my-org/my-dataset"),
         formatter=MultipleChoiceFormatter(template="Q: {question}\n\nA:"),
-        scorers=(MultipleChoiceScorer(),),
         metrics=(AccuracyMetric(scorer=MultipleChoiceScorer),),
     )
 
@@ -296,6 +317,7 @@ class MyTaskImpl(MyTask):
 | `fewshot_seed` | `int` | `42` | Random seed for few-shot |
 | `limit` | `int \| None` | `None` | Max instances to evaluate |
 | `split` | `Split` | `Split.TEST` | Dataset split to use |
+| `dependencies` | `list[str] \| None` | `None` | Runtime packages to install (e.g., `["pkg==1.0"]`) |
 
 ### Data Sources
 
@@ -328,14 +350,12 @@ TaskConfig(
 **Multiple Choice Tasks:**
 ```python
 formatter=MultipleChoiceFormatter(template="Question: {question}\n\nAnswer:")
-scorers=(MultipleChoiceScorer(),)
 metrics=(AccuracyMetric(scorer=MultipleChoiceScorer),)
 ```
 
 **Generation Tasks (exact match):**
 ```python
 formatter=CompletionFormatter(template="{question}")
-scorers=(ExactMatchScorer(),)
 metrics=(AccuracyMetric(scorer=ExactMatchScorer),)
 ```
 
@@ -360,7 +380,7 @@ class MMLUAnatomy(MMLUTask):
 from olmo_eval.evals.tasks import register_variant
 
 # Register after task is defined
-register_variant("my_task", "3shot", num_fewshot=3)
+register_variant("my_task", "bpb", formatter=PPLFormatter(), metrics=(BPBMetric(scorer=BitsPerByteScorer),))
 ```
 
 **Regimes** are configuration presets (e.g., `:olmes`, `:zero`):
@@ -368,10 +388,138 @@ register_variant("my_task", "3shot", num_fewshot=3)
 from olmo_eval.evals.tasks import register_regime
 
 register_regime("my_task", "olmes", num_fewshot=5, fewshot_seed=1234)
-register_regime("my_task", "zero", num_fewshot=0)
+register_regime("my_task", "3shot", num_fewshot=3)
 ```
 
-Usage: `olmo-eval run -t my_task:3shot:olmes`
+Usage: `olmo-eval run -t my_task:bpb:3shot`
+
+## Agent Tasks
+
+Agent tasks support multi-turn evaluations with tool use, enabling evaluation of models' ability to use tools to complete tasks. They use the OpenAI Agents SDK for orchestration and support vLLM as the inference backend.
+
+### Creating an Agent Task
+
+Agent tasks extend `AgentTask` instead of `Task` and use `AgentTaskConfig` instead of `TaskConfig`:
+
+```python
+from collections.abc import AsyncGenerator, Iterator
+from contextlib import asynccontextmanager
+from typing import Any
+
+from olmo_eval.core import AccuracyMetric, Instance
+from olmo_eval.core.formatters import ChatFormatter
+from olmo_eval.data import DataLoader, DataSource
+from olmo_eval.evals.tasks.core import AgentTask, AgentTaskConfig, register
+
+
+async def my_tool(query: str) -> str:
+    """A tool the agent can use.
+
+    Args:
+        query: The search query.
+
+    Returns:
+        Tool result as a string.
+    """
+    # Tool implementation
+    return f"Result for: {query}"
+
+
+class MyAgentTask(AgentTask):
+    """Agent task with custom tools."""
+
+    @property
+    def instances(self) -> Iterator[Instance]:
+        """Yield instances from the dataset."""
+        if self._instances_cache is None:
+            self._instances_cache = []
+            loader = DataLoader()
+            source = self.config.get_data_source()
+            for idx, doc in enumerate(loader.load(source)):
+                self._instances_cache.append(
+                    Instance(
+                        question=doc["question"],
+                        gold_answer=doc["answer"],
+                        metadata={"id": idx},
+                    )
+                )
+        yield from self._instances_cache
+
+    @asynccontextmanager
+    async def _get_agent(
+        self,
+        model: str,
+        model_url: str,
+        system_prompt: str | None = None,
+        temperature: float = 0.0,
+        **kwargs: Any,
+    ) -> AsyncGenerator[Any, None]:
+        """Create agent with tools."""
+        from agents import Agent, ModelSettings, OpenAIChatCompletionsModel, function_tool
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(base_url=model_url, api_key="EMPTY")
+        llm = OpenAIChatCompletionsModel(openai_client=client, model=model)
+
+        # Create tools using function_tool decorator
+        tools = [function_tool(strict_mode=False)(my_tool)]
+
+        agent = Agent(
+            name="MyAgent",
+            instructions=system_prompt or "You are a helpful assistant.",
+            model=llm,
+            model_settings=ModelSettings(temperature=temperature),
+            tools=tools,
+        )
+        yield agent
+
+
+def _my_agent_config() -> AgentTaskConfig:
+    return AgentTaskConfig(
+        name="my_agent_task",
+        data_source=DataSource(path="my-org/my-dataset", split="test"),
+        formatter=ChatFormatter(system_prompt="You are a helpful assistant with tools."),
+        metrics=(AccuracyMetric(scorer=MultipleChoiceScorer),),
+        max_turns=10,
+        max_concurrency=1,
+        required_secrets=("MY_API_KEY",),
+    )
+
+
+@register("my_agent_task", _my_agent_config)
+class MyAgent(MyAgentTask):
+    pass
+```
+
+### AgentTaskConfig Reference
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `formatter` | `Formatter` | `ChatFormatter()` | Formatter with system prompt (use `ChatFormatter(system_prompt="...")`) |
+| `max_turns` | `int` | `10` | Maximum agent turns |
+| `max_concurrency` | `int` | `1` | Concurrent agent executions |
+| `required_secrets` | `tuple[str, ...]` | `()` | Required environment variables |
+| `tools` | `tuple[ToolSchema, ...]` | `()` | Tool schemas for display |
+
+### Running Agent Tasks
+
+```bash
+# Local run
+olmo-eval run --task simpleqa_agent --model Qwen/Qwen3-8B -o limit=10
+
+# Beaker launch
+olmo-eval beaker launch -n "agent-eval" -m Qwen/Qwen3-8B -t simpleqa_agent -o limit=10
+```
+
+### vLLM Configuration
+
+For agent tasks using vLLM, the tool call parser is auto-detected based on model name. You can override it via model overrides:
+
+```bash
+olmo-eval run --task simpleqa_agent -m my-model -o tool_call_parser=hermes
+```
+
+Supported parsers: `hermes`, `llama3_json`, `mistral`
 
 ## Launching on Beaker
 
@@ -405,7 +553,6 @@ olmo-eval beaker launch \
     --task mmlu --task gsm8k --task arc \
     --cluster h100 \
     --gpus 4 \
-    --priority high \
     --timeout 48h
 
 # Preview the Beaker spec without launching
@@ -415,7 +562,7 @@ olmo-eval beaker launch -n "test" -m llama3.1-8b -t arc_easy --dry-run
 ### Multiple Models
 
 Run the same suite across multiple models by specifying `-m` multiple times.
-Models with compatible runtimes (same GPUs, parallelism, cluster, inference provider) are
+Models with compatible runtimes (same cluster, inference provider) are
 grouped into a single experiment:
 
 ```bash
@@ -427,13 +574,13 @@ olmo-eval beaker launch -n "eval-compare" \
 
 # Creates 1 experiment running both models
 
-# Models with different resource requirements get separate experiments
+# Models with different providers get separate experiments
 olmo-eval beaker launch -n "eval-mixed" \
-    -m llama3.1-8b --gpus 1 \
-    -m llama3.1-70b --gpus 4 \
+    -m llama3.1-8b -o provider.name=vllm \
+    -m gpt-4o -o provider.name=litellm \
     -t mmlu -t gsm8k
 
-# Creates 2 experiments (different GPU requirements)
+# Creates 2 experiments (different inference providers)
 ```
 
 ### Per-Task Priorities
@@ -453,11 +600,10 @@ olmo-eval beaker launch -n "eval-suite" -m llama3.1-8b \
 #   eval-suite-normal: runs gsm8k at normal priority
 #   eval-suite-low:    runs arc at low priority
 
-# With task regimes (@ comes after ::)
-olmo-eval beaker launch -n "eval" -m llama3.1-8b -t "mmlu::olmes@high"
+# With task regimes (@ comes after regime)
+olmo-eval beaker launch -n "eval" -m llama3.1-8b -t "mmlu:olmes@high"
 
-# Tasks without @priority use the --priority flag (default: normal)
-olmo-eval beaker launch -n "eval" -m llama3.1-8b -t mmlu -t gsm8k --priority high
+# Tasks without @priority use the config file priority (default: normal)
 ```
 
 ### Experiment Groups
@@ -483,6 +629,15 @@ olmo-eval beaker group info benchmark-2024 --wait --format csv > results.csv
 
 # Export as JSON
 olmo-eval beaker group info benchmark-2024 --format json
+
+# Watch experiment logs
+olmo-eval beaker watch -e <experiment-id>
+
+# Cancel all experiments in a group
+olmo-eval beaker group cancel benchmark-2024
+
+# List groups in a workspace
+olmo-eval beaker group list -w <workspace>
 ```
 
 ### Inference Provider Configuration
@@ -504,10 +659,10 @@ tasks:
 cluster: h100
 ```
 
-**Via CLI inline override:**
+**Via CLI override flag:**
 
 ```bash
-olmo-eval beaker launch -n "eval" -m "llama3.1-8b::provider=vllm" -t mmlu
+olmo-eval beaker launch -n "eval" -m llama3.1-8b -o provider.name=vllm -t mmlu
 ```
 
 Models with the same provider (and other compatible settings) are grouped into the same experiment.
@@ -526,23 +681,64 @@ Available inference providers:
 | `--name` | `-n` | required | Experiment name |
 | `--model` | `-m` | required | Model name or HuggingFace path (can specify multiple) |
 | `--task` | `-t` | required | Task name with optional `@priority` suffix (can specify multiple) |
+| `--override` | `-o` | none | Override for preceding `-m` or `-t` (can specify multiple) |
 | `--cluster` | `-c` | required | Cluster alias (`h100`, `a100`, `aus`) or full name |
 | `--gpus` | `-G` | `1` | Number of GPUs per model instance |
 | `--parallelism` | `-P` | `1` | Number of model instances to run in parallel |
 | `--max-gpus-per-node` | | `8` | Maximum GPUs per node (tasks split if exceeded) |
-| `--priority` | `-p` | `normal` | Job priority (`low`, `normal`, `high`, `urgent`) |
 | `--preemptible` | | `true` | Allow preemption |
 | `--timeout` | `-T` | `24h` | Job timeout (e.g., `24h`, `30m`) |
 | `--retries` | `-r` | none | Number of retries on failure |
 | `--workspace` | `-w` | required | Beaker workspace |
 | `--budget` | `-B` | required | Beaker budget |
 | `--group` | `-g` | none | Add experiments to Beaker group(s) (can specify multiple) |
-| `--async` | `-a` | `false` | Enable parallel task execution |
-| `--async-stream` | | `false` | Use vLLM's AsyncLLMEngine for continuous batching |
-| `--num-workers` | `-W` | auto | Number of workers for async mode |
-| `--gpus-per-worker` | | `1` | GPUs per worker for async mode |
+| `--runner-type` | `-R` | `sync` | Runner type: `sync`, `async`, `async-stream`, `agent` |
+| `--num-workers` | `-W` | auto | Number of workers for async/async-stream modes |
+| `--gpus-per-worker` | | `1` | GPUs per worker for async/async-stream modes |
 | `--dry-run` | `-d` | `false` | Print spec without launching |
 | `--follow/--no-follow` | | `true` | Follow logs after launch |
+
+### Per-Model and Per-Task Overrides
+
+Use the `-o/--override` flag to apply configuration overrides to the preceding `-m` or `-t`:
+
+```bash
+# Model overrides (apply to the preceding -m)
+olmo-eval beaker launch -n "eval" \
+    -m llama3.1-8b -o provider.name=vllm -o provider.package=vllm==0.14.0 \
+    -m gpt-4o -o provider.name=litellm \
+    -t mmlu -t gsm8k
+
+# Task overrides (apply to the preceding -t)
+olmo-eval beaker launch -n "eval" \
+    -m llama3.1-8b \
+    -t mmlu -o limit=100 -o num_fewshot=5 \
+    -t gsm8k -o limit=50
+
+# Mixed model and task overrides
+olmo-eval beaker launch -n "eval" \
+    -m llama3.1-8b -o provider.name=vllm \
+    -m gpt-4o -o provider.name=litellm \
+    -t mmlu -o limit=100 \
+    -t gsm8k
+```
+
+The `-o` flag uses OmegaConf dotlist syntax, supporting:
+
+| Type | Syntax | Example |
+|------|--------|---------|
+| String | `key=value` | `-o provider.name=vllm` |
+| Number | `key=123` | `-o limit=100` |
+| Boolean | `key=true` | `-o preemptible=false` |
+| Nested | `a.b.c=val` | `-o provider.package=vllm==0.14.0` |
+| List | `key=[a,b]` | `-o 'args=[--flag1, --flag2]'` |
+| Dict | `key={a: 1}` | `-o 'config={distributed: true}'` |
+
+**Note:** Quote complex values to prevent shell interpretation:
+```bash
+# Good - single quotes protect the value
+-o 'extra_config={key: value, nested: {a: 1}}'
+```
 
 ### YAML Configuration
 
@@ -575,7 +771,7 @@ timeout: 24h
 olmo-eval beaker launch -f eval_config.yaml --dry-run
 
 # Override specific values
-olmo-eval beaker launch -f eval_config.yaml --gpus 4 --priority high
+olmo-eval beaker launch -f eval_config.yaml --gpus 4
 
 # Add additional models via CLI
 olmo-eval beaker launch -f eval_config.yaml -m olmo-2-7b
@@ -680,7 +876,7 @@ description: "Full evaluation suite for Llama 70B"
 | `gpus_per_worker` | int | no | GPUs per worker for async modes (default: `1`) |
 | `description` | string | no | Experiment description (config-only) |
 
-See `examples/configs/` for more configuration examples.
+See `examples/beaker/configs/` for more configuration examples.
 
 ### Cluster Aliases
 
@@ -769,11 +965,28 @@ models:
 ```
 
 ```bash
-# Or via CLI inline override
-olmo-eval beaker launch -n "eval" -m "llama3.1-8b::provider=vllm" -t mmlu
+# Or via CLI override flag
+olmo-eval beaker launch -n "eval" -m llama3.1-8b -o provider.name=vllm -t mmlu
 
 # Manual installation inside container
 uv pip install -e '.[vllm]'  # includes vllm[runai]
+```
+
+### Task-Specific Dependencies
+
+Tasks can declare runtime dependencies that are installed at job startup (see [Tasks](#tasks)). Dependencies are automatically merged, deduplicated, and installed after the inference provider.
+
+You can also add or override dependencies via the CLI:
+
+```bash
+# Add dependencies to a task via -o flag
+olmo-eval beaker launch -n "eval" -m llama3.1-8b \
+    -t code_eval -o 'dependencies=["code-sandbox==1.0", "git+https://github.com/user/repo@v2.0"]'
+
+# Dependencies from multiple tasks are merged
+olmo-eval beaker launch -n "eval" -m llama3.1-8b \
+    -t task_a -o 'dependencies=["pkg1"]' \
+    -t task_b -o 'dependencies=["pkg2"]'
 ```
 
 ### Pushing to Beaker
@@ -803,6 +1016,9 @@ olmo-eval results query --model llama3.1-8b
 
 # Query by task (shows comparison matrix)
 olmo-eval results query --task mmlu --task gsm8k
+
+# Query by experiment group
+olmo-eval results query -G my-benchmark-group --format json
 
 # Combine filters
 olmo-eval results query --model llama3.1-8b --task mmlu --format json
@@ -856,39 +1072,137 @@ Configure via environment variables:
 
 ## Advanced Usage
 
-### Parallel Execution
+### Runner Types
 
-By default, tasks run sequentially. Two parallel execution modes are available for faster evaluation:
+By default, tasks run sequentially. Different runner types are available for various use cases:
 
-| Mode | Flag | Backend | Best For |
-|------|------|---------|----------|
-| Sequential | (default) | Any | Simple runs, debugging |
-| Async | `--async` | Any | Multi-GPU batch processing |
-| Streaming | `--async-stream` | vLLM only | Generative tasks only |
+| Runner | Flag | Backend | Best For |
+|--------|------|---------|----------|
+| Sync | (default) | Any | Simple runs, debugging |
+| Async | `--runner-type async` | Any | Multi-GPU batch processing |
+| Async-Stream | `--runner-type async-stream` | vLLM only | Generative tasks only |
+| Agent | `--runner-type agent` | vLLM | Multi-turn agent tasks |
 
-**Sequential Mode (Default)** - Runs one task at a time:
+**Sync Mode (Default)** - Runs one task at a time:
 
 ```bash
 olmo-eval run -m llama3.1-8b -t mmlu -t gsm8k -t arc
 ```
 
-**Async Mode (`--async`)** - Spawns worker processes that each load the model and process batches in parallel:
+**Async Mode** - Spawns worker processes that each load the model and process batches in parallel:
 
 ```bash
 # Auto-detect workers from available GPUs
-olmo-eval run --async -m llama3.1-8b -t mmlu -t gsm8k -t arc
+olmo-eval run --runner-type async -m llama3.1-8b -t mmlu -t gsm8k -t arc
 
 # Specify number of workers
-olmo-eval run --async --num-workers 4 -m llama3.1-8b -t mmlu -t gsm8k
+olmo-eval run --runner-type async --num-workers 4 -m llama3.1-8b -t mmlu -t gsm8k
 
 # Multi-GPU models (e.g., 70B on 4 GPUs per worker)
-olmo-eval run --async --num-workers 2 --gpus-per-worker 4 -m llama3.1-70b -t mmlu
+olmo-eval run --runner-type async --num-workers 2 --gpus-per-worker 4 -m llama3.1-70b -t mmlu
 ```
 
-**Streaming Mode (`--async-stream`)** - Uses vLLM's AsyncLLMEngine for true continuous batching:
+**Async-Stream Mode** - Uses vLLM's AsyncLLMEngine for true continuous batching:
 
 ```bash
-olmo-eval run --async-stream -m llama3.1-8b -t mmlu -t gsm8k -t arc
+olmo-eval run --runner-type async-stream -m llama3.1-8b -t mmlu -t gsm8k -t arc
+```
+
+**Agent Mode** - For multi-turn agent tasks with tool use:
+
+```bash
+olmo-eval run --runner-type agent -m llama3.1-8b -t simpleqa_agent
+```
+
+## Debugging and Inspection
+
+olmo-eval provides tools for inspecting tasks, requests, and responses at various stages of evaluation.
+
+### Task Inspection (`olmo-eval task inspect`)
+
+Inspect task instances without running evaluation:
+
+```bash
+# View raw instance data
+olmo-eval task inspect arc_easy
+
+# View multiple instances
+olmo-eval task inspect arc_easy -n 5 --skip 10
+
+# View the LM request that will be sent to the model
+olmo-eval task inspect mmlu:olmes --request
+
+# View formatted prompt with chat template applied
+olmo-eval task inspect humaneval -T meta-llama/Llama-3.1-8B-Instruct --formatted
+
+# View tokenized representation
+olmo-eval task inspect humaneval -T meta-llama/Llama-3.1-8B-Instruct --tokens
+
+# Export as JSON for programmatic use
+olmo-eval task inspect arc_easy --json
+```
+
+| Option | Description |
+|--------|-------------|
+| `-n, --count` | Number of instances to display |
+| `-s, --skip` | Number of instances to skip |
+| `--instance` | Show instance details (default if no other flags) |
+| `--request` | Show the LM request |
+| `-T, --tokenizer` | Tokenizer for formatting/tokenization |
+| `--formatted` | Show prompt after template applied (requires `-T`) |
+| `--tokens` | Show token array (requires `-T`) |
+| `--json` | Output as JSON |
+
+### Runtime Inspection Flags
+
+Inspect data during evaluation runs with `olmo-eval run`:
+
+```bash
+# Inspect the first instance and request before running
+olmo-eval run -m llama3.1-8b -t mmlu --inspect-instance --inspect-request
+
+# Inspect the response after model generation
+olmo-eval run -m llama3.1-8b -t mmlu --inspect-response
+
+# Combine multiple inspection flags
+olmo-eval run -m llama3.1-8b -t mmlu \
+    --inspect-instance \
+    --inspect-request \
+    --inspect-response
+```
+
+| Flag | Description |
+|------|-------------|
+| `--inspect-instance` | Print the first instance of each task before running |
+| `--inspect-request` | Print the first LM request before model generation |
+| `--inspect-formatted` | Show formatted prompt (after chat template applied) |
+| `--inspect-tokens` | Show token array before evaluation |
+| `--inspect-response` | Print the first response after model generation |
+
+### Mock Provider for Testing
+
+Use the `mock` provider to test inspection tools without loading a real model:
+
+```bash
+# Quick inspection without vLLM or PyTorch
+olmo-eval run -m mock -t humaneval:3shot:bpb --inspect-request
+
+# Dry run with mock to preview configuration
+olmo-eval run -m mock -t mmlu --dry-run
+```
+
+### Beaker Job Inspection
+
+The same inspection flags work with Beaker jobs:
+
+```bash
+olmo-eval beaker launch \
+    -n "debug-eval" \
+    -m Qwen/Qwen3-8B \
+    -t mmlu -o limit=10 \
+    --inspect-request \
+    --inspect-response \
+    --cluster h100
 ```
 
 ## Development

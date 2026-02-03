@@ -3,16 +3,9 @@
 from collections.abc import Iterator
 from typing import Any
 
-from olmo_eval.core import (
-    BitsPerByteScorer,
-    BPBMetric,
-    Instance,
-    LMOutput,
-    LMRequest,
-    PPLFormatter,
-    RequestType,
-    SamplingParams,
-)
+from olmo_eval.core.formatters import PPLFormatter
+from olmo_eval.core.metrics import BPBMetric
+from olmo_eval.core.types import Instance, LMOutput, LMRequest, RequestType, SamplingParams
 from olmo_eval.data import DataLoader, DataSource
 from olmo_eval.evals.constants.code import MBPP_STOP_SEQUENCES
 from olmo_eval.evals.extract import extract_code
@@ -177,7 +170,6 @@ def _mbpp_config() -> TaskConfig:
     return TaskConfig(
         name="mbpp",
         data_source=DataSource(path="google-research-datasets/mbpp"),
-        scorers=(),
         metrics=(),
         sampling_params=SamplingParams(
             max_tokens=1024,
@@ -191,7 +183,6 @@ def _mbpp_plus_config() -> TaskConfig:
     return TaskConfig(
         name="mbpp_plus",
         data_source=DataSource(path="evalplus/mbppplus"),
-        scorers=(),
         metrics=(),
         sampling_params=SamplingParams(
             max_tokens=1024,
@@ -229,7 +220,6 @@ register_variant(
     "mbpp",
     "bpb",
     formatter=PPLFormatter(leading_space=False),
-    scorers=(BitsPerByteScorer(),),
     metrics=(BPBMetric(),),
     primary_metric=BPBMetric(),
 )
@@ -238,7 +228,6 @@ register_variant(
     "mbpp_plus",
     "bpb",
     formatter=PPLFormatter(leading_space=False),
-    scorers=(BitsPerByteScorer(),),
     metrics=(BPBMetric(),),
     primary_metric=BPBMetric(),
 )

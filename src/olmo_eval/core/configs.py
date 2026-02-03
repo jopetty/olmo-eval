@@ -15,10 +15,13 @@ from olmo_eval.core.literals import DtypeLiteral, ProviderLiteral
 class ModelConfig:
     """Core model configuration for inference.
 
-    Note: There are multiple ModelConfig classes with different purposes:
-    - core/configs.py:ModelConfig (this one) - Core model config for inference
-    - launch/config.py:ModelConfig - Beaker launch config with resource settings
-    - runners/mixins.py:ModelConfig - Metrics output format for JSON serialization
+    For agent tasks, models can be specified in two ways:
+    1. HuggingFace model/path with provider="vllm" - starts local vLLM server
+    2. API endpoint with model_url - uses OpenAI-compatible API directly
+
+    Example presets for API-based models:
+        "gpt-4o": ModelConfig(model="gpt-4o", model_url="https://api.openai.com/v1")
+        "claude-3": ModelConfig(model="claude-3-opus", model_url="https://api.anthropic.com")
     """
 
     model: str
@@ -29,6 +32,15 @@ class ModelConfig:
     dtype: DtypeLiteral = "auto"
     max_model_len: int | None = None  # Override model's default context length (vLLM)
     extra_args: dict[str, Any] = field(default_factory=dict)
+    # API endpoint for OpenAI-compatible APIs (agent tasks only)
+    # When set, agent tasks use this URL directly instead of starting vLLM
+    model_url: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to dictionary for JSON output."""
+        from dataclasses import asdict
+
+        return asdict(self)
 
 
 @dataclass
@@ -50,41 +62,34 @@ def expand_tasks(tasks: list[str]) -> list[str]:
     """Expand suites and specs to individual task names.
 
     Supports both Suite names from the named_tasks registry
-    and individual task specs. Preserves inline overrides (::key=value)
-    and priority suffixes (@priority) when expanding suites.
+    and individual task specs. Preserves priority suffixes (@priority)
+    when expanding suites.
 
     Args:
         tasks: List of task specs or suite names, optionally with
-               overrides (::key=value) and/or priority (@priority).
+               priority (@priority).
 
     Returns:
         Flattened list with suites expanded to their constituent tasks,
-        with overrides and priorities propagated to each expanded task.
+        with priorities propagated to each expanded task.
     """
     from olmo_eval.evals.suites import get_suite, suite_exists
 
     result = []
     for t in tasks:
-        # Parse out priority suffix first (e.g., "suite::temp=0@high" -> "suite::temp=0", "high")
+        # Parse out priority suffix (e.g., "suite@high" -> "suite", "high")
         priority_suffix = ""
-        spec_without_priority = t
+        base_spec = t
         if "@" in t:
-            spec_without_priority, priority = t.rsplit("@", 1)
+            base_spec, priority = t.rsplit("@", 1)
             priority_suffix = f"@{priority}"
 
-        # Parse out overrides (e.g., "suite:variant::temp=0" -> "suite:variant", "temp=0")
-        override_suffix = ""
-        base_spec = spec_without_priority
-        if "::" in spec_without_priority:
-            base_spec, overrides = spec_without_priority.split("::", 1)
-            override_suffix = f"::{overrides}"
-
-        # Check if the base spec (without overrides/priority) is a suite
+        # Check if the base spec (without priority) is a suite
         if suite_exists(base_spec):
             suite = get_suite(base_spec)
-            # Propagate overrides and priority to each expanded task
+            # Propagate priority to each expanded task
             for expanded_task in suite.expand():
-                result.append(f"{expanded_task}{override_suffix}{priority_suffix}")
+                result.append(f"{expanded_task}{priority_suffix}")
         else:
             result.append(t)
     return result
@@ -95,7 +100,7 @@ def validate_tasks(tasks: list[str]) -> tuple[list[str], list[str]]:
 
     Args:
         tasks: List of task specs or suite names, optionally with
-               overrides (::key=value) and/or priority (@priority).
+               priority (@priority).
 
     Returns:
         Tuple of (valid_tasks, invalid_tasks). valid_tasks is the expanded list
@@ -110,13 +115,12 @@ def validate_tasks(tasks: list[str]) -> tuple[list[str], list[str]]:
     expanded = expand_tasks(tasks)
 
     for spec in expanded:
-        # Strip priority suffix first (e.g., "task::temp=0@high" -> "task::temp=0")
+        # Strip priority suffix (e.g., "task@high" -> "task")
         task_spec = spec.rsplit("@", 1)[0] if "@" in spec else spec
 
-        # task_exists handles ::overrides internally via parse_task_spec
         if task_exists(task_spec):
             valid_tasks.append(spec)
-        elif suite_exists(task_spec.split("::")[0] if "::" in task_spec else task_spec):
+        elif suite_exists(task_spec):
             # It's a suite that wasn't expanded (shouldn't happen but handle it)
             valid_tasks.append(spec)
         else:
@@ -127,7 +131,13 @@ def validate_tasks(tasks: list[str]) -> tuple[list[str], list[str]]:
 
 # Keys that are vLLM/backend-specific and should not be passed to ModelConfig
 # These are handled separately by the runners
-_BACKEND_ONLY_KEYS = {"load_format", "extra_loader_config", "attention_backend", "gpus_per_worker"}
+_BACKEND_ONLY_KEYS = {
+    "load_format",
+    "extra_loader_config",
+    "attention_backend",
+    "gpus_per_worker",
+    "gpus",
+}
 
 
 def get_model_config(name: str, **overrides: Any) -> ModelConfig:
@@ -163,4 +173,19 @@ def get_model_config(name: str, **overrides: Any) -> ModelConfig:
             )
         return base
 
-    return ModelConfig(model=name, **filtered_overrides)
+    # Check if model_url was provided in overrides
+    model_url = filtered_overrides.pop("model_url", None)
+    config = ModelConfig(model=name, **filtered_overrides)
+    if model_url:
+        config = ModelConfig(
+            model=config.model,
+            tokenizer=config.tokenizer,
+            provider=config.provider,
+            revision=config.revision,
+            trust_remote_code=config.trust_remote_code,
+            dtype=config.dtype,
+            max_model_len=config.max_model_len,
+            extra_args=config.extra_args,
+            model_url=model_url,
+        )
+    return config

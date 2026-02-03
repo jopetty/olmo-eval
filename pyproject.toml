@@ -23,7 +23,7 @@ classifiers = [
 
 dependencies = [
     "click~=8.3.1",
-    "datasets>=3.0.0",
+    "datasets>=3.2.0",
     "numpy>=1.20.0",
     "omegaconf~=2.3.0",
     "opencv-python-headless==4.12.0.88",
@@ -46,6 +46,10 @@ vllm = [
 ]
 litellm = [
     "litellm~=1.80.11",
+]
+agents = [
+    "openai-agents~=0.7.0",
+    "httpx~=0.28.1",
 ]
 beaker = [
     "beaker-py>=2.5.4,<3",
@@ -81,6 +85,7 @@ dev = [
     "ty>=0.0.10",
     "pre-commit>=4.0.0",
     "olmo-eval-internal[storage]",
+    "jinja2>=3.1.6",
 ]
 
 # ty file-based overrides for optional dependencies (inference providers use vllm/litellm)

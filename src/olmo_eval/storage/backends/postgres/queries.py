@@ -109,23 +109,29 @@ class QueryHelper:
 
     def query(
         self,
-        model_name: str | None = None,
-        model_hash: str | None = None,
-        task_name: str | None = None,
-        experiment_group: str | None = None,
+        experiment_ids: list[str] | None = None,
+        model_names: list[str] | None = None,
+        model_hashes: list[str] | None = None,
+        task_names: list[str] | None = None,
+        task_hashes: list[str] | None = None,
+        experiment_groups: list[str] | None = None,
         start_time: datetime | None = None,
         end_time: datetime | None = None,
         latest: bool = False,
         limit: int = 100,
         offset: int = 0,
     ) -> list[EvalResult]:
-        """Query evaluation results by filters.
+        """Query evaluation results with filters (AND logic).
+
+        All filters are combined with AND. Within a list filter, items are OR'd.
 
         Args:
-            model_name: Filter by model name.
-            model_hash: Filter by model hash.
-            task_name: Filter by task name (results containing this task).
-            experiment_group: Filter by experiment group.
+            experiment_ids: Filter by experiment IDs.
+            model_names: Filter by model name prefixes.
+            model_hashes: Filter by model hash prefixes.
+            task_names: Filter by task name prefixes.
+            task_hashes: Filter by task hash prefixes (OR within list).
+            experiment_groups: Filter by experiment group prefixes (OR within list).
             start_time: Filter by timestamp >= start_time.
             end_time: Filter by timestamp <= end_time.
             latest: If True, return only the most recent result.
@@ -136,10 +142,12 @@ class QueryHelper:
             List of matching evaluation results.
         """
         return self.experiment_repo.query(
-            model_name=model_name,
-            model_hash=model_hash,
-            task_name=task_name,
-            experiment_group=experiment_group,
+            experiment_ids=experiment_ids,
+            model_names=model_names,
+            model_hashes=model_hashes,
+            task_names=task_names,
+            task_hashes=task_hashes,
+            experiment_groups=experiment_groups,
             start_time=start_time,
             end_time=end_time,
             latest=latest,
@@ -178,16 +186,16 @@ class QueryHelper:
         """Get task metrics for a model.
 
         Args:
-            model_name: Model name filter.
-            model_hash: Model hash filter.
+            model_name: Model name prefix filter.
+            model_hash: Model hash prefix filter.
             tasks: Optional list of tasks to include.
 
         Returns:
             Dict mapping task_name -> primary_score.
         """
         experiments = self.experiment_repo.query(
-            model_name=model_name,
-            model_hash=model_hash,
+            model_names=[model_name] if model_name else None,
+            model_hashes=[model_hash] if model_hash else None,
             latest=True,
         )
 
@@ -195,12 +203,16 @@ class QueryHelper:
             return {}
 
         exp = experiments[0]
-        results = {}
+        results: dict[str, float | None] = {}
 
         for task in exp.tasks:
             if tasks and task.task_name not in tasks:
                 continue
-            results[task.task_name] = task.primary_score
+            # Extract primary score from nested metrics using primary_metric identifier
+            from olmo_eval.runners.common import extract_score_from_metrics
+
+            primary_score = extract_score_from_metrics(task.metrics, task.primary_metric)
+            results[task.task_name] = primary_score
 
         return results
 
@@ -316,7 +328,7 @@ class QueryHelper:
         model_names: list[str] | None = None,
         model_hashes: list[str] | None = None,
         task_names: list[str] | None = None,
-        task_hash: str | None = None,
+        task_hashes: list[str] | None = None,
         limit: int | None = None,
         after_id: int | None = None,
     ) -> list[dict[str, Any]]:
@@ -331,7 +343,7 @@ class QueryHelper:
             model_names: Filter by model names.
             model_hashes: Filter by model hashes.
             task_names: Filter by task names.
-            task_hash: Filter by exact task hash.
+            task_hashes: Filter by task hash prefixes (OR within list).
             limit: Maximum number of results.
             after_id: Return instances with id > after_id (keyset pagination).
 
@@ -343,7 +355,7 @@ class QueryHelper:
             model_names=model_names,
             model_hashes=model_hashes,
             task_names=task_names,
-            task_hash=task_hash,
+            task_hashes=task_hashes,
             limit=limit,
             after_id=after_id,
         )
