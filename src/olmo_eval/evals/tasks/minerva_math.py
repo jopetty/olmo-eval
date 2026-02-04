@@ -3,11 +3,7 @@ from typing import Any
 
 from olmo_eval.core.formatters import CompletionFormatter, PPLFormatter
 from olmo_eval.core.metrics import AccuracyMetric, BPBMetric
-from olmo_eval.core.scorers import (
-    ExactMatchFlexScorer,
-    ExactMatchScorer,
-    MathVerifyScorer,
-)
+from olmo_eval.core.scorers import ExactMatchFlexScorer
 from olmo_eval.core.types import Instance, LMOutput, LMRequest, SamplingParams
 from olmo_eval.data import DataLoader, DataSource
 from olmo_eval.evals.extract import MathExtractor
@@ -109,20 +105,19 @@ class Math500Task(MinervaMathTask):
         )
 
 
-def _minerva_math_config(subset: str | None = None) -> TaskConfig:
-    data_source = DataSource(
-        path="EleutherAI/hendrycks_math",
-        subset=subset,
-    )
-
+def _minerva_math_config(subset: str) -> TaskConfig:
     return TaskConfig(
         name=f"minerva_math_{subset}" if subset else "minerva_math",
-        data_source=data_source,
+        data_source=DataSource(
+            path="EleutherAI/hendrycks_math",
+            subset=subset,
+        ),
         formatter=CompletionFormatter(
             template="Problem: {question}\nSolution: ",
-            fewshot_answer_key="solution_text",  # Use full solution for few-shot
+            fewshot_answer_key="solution_text",
         ),
-        metrics=(AccuracyMetric(scorer=ExactMatchScorer),),
+        metrics=(AccuracyMetric(scorer=ExactMatchFlexScorer),),
+        num_fewshot=4,
         sampling_params=SamplingParams(
             max_tokens=1024,
             temperature=0.7,
@@ -136,9 +131,10 @@ def _math500_config() -> TaskConfig:
         data_source=DataSource(path="HuggingFaceH4/MATH-500"),
         formatter=CompletionFormatter(
             template="Problem: {question}\nSolution: ",
-            fewshot_answer_key="solution_text",  # Use full solution for few-shot
+            fewshot_answer_key="solution_text",
         ),
-        metrics=(AccuracyMetric(scorer=ExactMatchScorer),),
+        metrics=(AccuracyMetric(scorer=ExactMatchFlexScorer),),
+        num_fewshot=4,
         sampling_params=SamplingParams(
             max_tokens=1024,
             temperature=0.7,
@@ -146,23 +142,12 @@ def _math500_config() -> TaskConfig:
     )
 
 
-@register("minerva_math", lambda: _minerva_math_config(None))
-class MinervaMath(MinervaMathTask):
-    pass
+for subset in MATH_SUBSETS:
+    task_name = f"minerva_math_{subset}"
+    class_name = f"MinervaMath_{subset.title().replace('_', '')}"
 
-
-for _subset in MATH_SUBSETS:
-
-    def _make_config(s: str = _subset) -> TaskConfig:
-        return _minerva_math_config(s)
-
-    _task_name = f"minerva_math_{_subset}"
-    _task_class = type(
-        f"MinervaMath_{_subset.title().replace('_', '')}",
-        (MinervaMathTask,),
-        {},
-    )
-    register(_task_name, _make_config)(_task_class)
+    task_cls = type(class_name, (MinervaMathTask,), {})
+    register(task_name, lambda s=subset: _minerva_math_config(s))(task_cls)
 
 
 @register("math500", _math500_config)
@@ -170,45 +155,9 @@ class Math500(Math500Task):
     pass
 
 
-# Create variants
-register_variant(
-    "minerva_math",
-    "4shot",
-    num_fewshot=4,
-)
-
-register_variant(
-    "math500",
-    "4shot",
-    num_fewshot=4,
-)
-
 for _subset in MATH_SUBSETS:
     _task_name = f"minerva_math_{_subset}"
-    register_variant(
-        _task_name,
-        "4shot",
-        num_fewshot=4,
-    )
-
-register_variant(
-    "minerva_math",
-    "bpb",
-    formatter=PPLFormatter(),
-    metrics=(BPBMetric(),),
-    primary_metric=BPBMetric(),
-)
-
-register_variant(
-    "math500",
-    "bpb",
-    formatter=PPLFormatter(),
-    metrics=(BPBMetric(),),
-    primary_metric=BPBMetric(),
-)
-
-for _subset in MATH_SUBSETS:
-    _task_name = f"minerva_math_{_subset}"
+    
     register_variant(
         _task_name,
         "bpb",
@@ -217,92 +166,10 @@ for _subset in MATH_SUBSETS:
         primary_metric=BPBMetric(),
     )
 
-# Math-Verify variants (symbolic verification)
-register_variant(
-    "minerva_math",
-    "math_verify",
-    metrics=(AccuracyMetric(scorer=MathVerifyScorer),),
-)
-
 register_variant(
     "math500",
-    "math_verify",
-    metrics=(AccuracyMetric(scorer=MathVerifyScorer),),
+    "bpb",
+    formatter=PPLFormatter(),
+    metrics=(BPBMetric(),),
+    primary_metric=BPBMetric(),
 )
-
-for _subset in MATH_SUBSETS:
-    _task_name = f"minerva_math_{_subset}"
-    register_variant(
-        _task_name,
-        "math_verify",
-        metrics=(AccuracyMetric(scorer=MathVerifyScorer),),
-    )
-
-# Combined variants: 4shot with math_verify
-register_variant(
-    "minerva_math",
-    "4shot_math_verify",
-    num_fewshot=4,
-    metrics=(AccuracyMetric(scorer=MathVerifyScorer),),
-)
-
-register_variant(
-    "math500",
-    "4shot_math_verify",
-    num_fewshot=4,
-    metrics=(AccuracyMetric(scorer=MathVerifyScorer),),
-)
-
-for _subset in MATH_SUBSETS:
-    _task_name = f"minerva_math_{_subset}"
-    register_variant(
-        _task_name,
-        "4shot_math_verify",
-        num_fewshot=4,
-        metrics=(AccuracyMetric(scorer=MathVerifyScorer),),
-    )
-
-# Flexible exact match variants (match ANY extracted answer against ANY gold answer)
-register_variant(
-    "minerva_math",
-    "exact_match_flex",
-    metrics=(AccuracyMetric(scorer=ExactMatchFlexScorer),),
-)
-
-register_variant(
-    "math500",
-    "exact_match_flex",
-    metrics=(AccuracyMetric(scorer=ExactMatchFlexScorer),),
-)
-
-for _subset in MATH_SUBSETS:
-    _task_name = f"minerva_math_{_subset}"
-    register_variant(
-        _task_name,
-        "exact_match_flex",
-        metrics=(AccuracyMetric(scorer=ExactMatchFlexScorer),),
-    )
-
-# Combined variants: 4shot with exact_match_flex
-register_variant(
-    "minerva_math",
-    "4shot_exact_match_flex",
-    num_fewshot=4,
-    metrics=(AccuracyMetric(scorer=ExactMatchFlexScorer),),
-)
-
-register_variant(
-    "math500",
-    "4shot_exact_match_flex",
-    num_fewshot=4,
-    metrics=(AccuracyMetric(scorer=ExactMatchFlexScorer),),
-)
-
-for _subset in MATH_SUBSETS:
-    _task_name = f"minerva_math_{_subset}"
-    register_variant(
-        _task_name,
-        "4shot_exact_match_flex",
-        num_fewshot=4,
-        metrics=(AccuracyMetric(scorer=ExactMatchFlexScorer),),
-    )
