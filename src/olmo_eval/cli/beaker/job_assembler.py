@@ -164,11 +164,15 @@ class JobConfigAssembler:
         Returns:
             List of package dependencies to install, or None if no dependencies.
         """
+        from olmo_eval.core.configs import expand_tasks
         from olmo_eval.evals.tasks import get_task_dependencies
         from olmo_eval.evals.tasks.core.registry import parse_overrides
 
+        # Expand suites to individual tasks before extracting dependencies
+        expanded_specs = expand_tasks(task_specs)
+
         # Get dependencies from registered task configs
-        deps = get_task_dependencies(task_specs)
+        deps = get_task_dependencies(expanded_specs)
 
         # Also extract dependencies from CLI overrides
         for _task_spec, overrides in task_overrides.items():
