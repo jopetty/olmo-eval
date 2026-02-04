@@ -3,7 +3,6 @@
 import logging
 import re
 import signal
-from typing import Optional
 
 import sympy
 from sympy.parsing.latex import parse_latex
@@ -134,7 +133,7 @@ def hendrycks_is_equiv(str1, str2, verbose=False):
         return str1 == str2
 
 
-def last_boxed_only_string(string: str) -> Optional[str]:
+def last_boxed_only_string(string: str) -> str | None:
     idx = string.rfind("\\boxed")
     if "\\boxed " in string:
         return "\\boxed " + string.split("\\boxed ")[-1].split("$")[0]
@@ -326,7 +325,7 @@ def fix_a_slash_b(string):
     try:
         a = int(a)
         b = int(b)
-        assert string == "{}/{}".format(a, b)
+        assert string == f"{a}/{b}"
         new_string = "\\frac{" + str(a) + "}{" + str(b) + "}"
         return new_string
     except AssertionError:

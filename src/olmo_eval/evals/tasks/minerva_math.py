@@ -9,7 +9,6 @@ from olmo_eval.data import DataLoader, DataSource
 from olmo_eval.evals.extract import MathExtractor
 from olmo_eval.evals.tasks.core import Task, TaskConfig, register, register_variant
 
-
 MATH_SUBSETS = [
     "algebra",
     "counting_and_probability",
@@ -111,9 +110,7 @@ def _minerva_math_config(subset: str) -> TaskConfig:
         metrics=(AccuracyMetric(scorer=ExactMatchFlexScorer),),
         num_fewshot=4,
         sampling_params=SamplingParams(
-            max_tokens=1024,
-            temperature=0,
-            stop_sequences=["Problem:", "\n\n"]
+            max_tokens=1024, temperature=0, stop_sequences=["Problem:", "\n\n"]
         ),
     )
 
@@ -129,9 +126,7 @@ def _math500_config() -> TaskConfig:
         metrics=(AccuracyMetric(scorer=ExactMatchFlexScorer),),
         num_fewshot=4,
         sampling_params=SamplingParams(
-            max_tokens=1024,
-            temperature=0,
-            stop_sequences=["Problem:", "\n\n"]
+            max_tokens=1024, temperature=0, stop_sequences=["Problem:", "\n\n"]
         ),
     )
 
@@ -151,7 +146,7 @@ class Math500(Math500Task):
 
 for _subset in MATH_SUBSETS:
     _task_name = f"minerva_math_{_subset}"
-    
+
     register_variant(
         _task_name,
         "bpb",
