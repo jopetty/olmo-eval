@@ -40,6 +40,8 @@ def build_predictions(scored: Sequence[Any]) -> list[dict]:
                 num_tokens = 0
 
             out_data: dict[str, Any] = {
+                "text": out.text,
+                "extracted_answer": out.extracted_answer,
                 "sum_logits": sum_logits,
                 "num_tokens": num_tokens,
                 "num_tokens_all": meta.get("num_tokens_all", num_tokens),
