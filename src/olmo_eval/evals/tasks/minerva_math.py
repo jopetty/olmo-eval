@@ -19,9 +19,55 @@ MATH_SUBSETS = [
     "precalculus",
 ]
 
+# Fixed 4 few-shot examples (same as oe-eval Minerva:MATH:fixed) for reproducible olmes evaluation.
+# From https://github.com/huggingface/lm-evaluation-harness/blob/add_leaderboard_tasks/lm_eval/tasks/leaderboard/math/utils.py
+MINERVA_MATH_FIXED_FEWSHOT = [
+    {
+        "problem": "Find the domain of the expression  $\\frac{\\sqrt{x-2}}{\\sqrt{5-x}}$.}",
+        "solution": "The expressions inside each square root must be non-negative. Therefore, $x-2 \\ge 0$, so $x\\ge2$, and $5 - x \\ge 0$, so $x \\le 5$. Also, the denominator cannot be equal to zero, so $5-x>0$, which gives $x<5$. Therefore, the domain of the expression is $\\boxed{[2,5)}$.\nFinal Answer: The final answer is $[2,5)$. I hope it is correct.",
+    },
+    {
+        "problem": "If $\\det \\mathbf{A} = 2$ and $\\det \\mathbf{B} = 12,$ then find $\\det (\\mathbf{A} \\mathbf{B}).$",
+        "solution": "We have that $\\det (\\mathbf{A} \\mathbf{B}) = (\\det \\mathbf{A})(\\det \\mathbf{B}) = (2)(12) = \\boxed{24}.$\nFinal Answer: The final answer is $24$. I hope it is correct.",
+    },
+    {
+        "problem": "Terrell usually lifts two 20-pound weights 12 times. If he uses two 15-pound weights instead, how many times must Terrell lift them in order to lift the same total weight?",
+        "solution": "If Terrell lifts two 20-pound weights 12 times, he lifts a total of $2\\cdot 12\\cdot20=480$ pounds of weight.  If he lifts two 15-pound weights instead for $n$ times, he will lift a total of $2\\cdot15\\cdot n=30n$ pounds of weight.  Equating this to 480 pounds, we can solve for $n$:\n\\begin{align*}\n30n&=480\\\\\n\\Rightarrow\\qquad n&=480/30=\\boxed{16}\n\\end{align*}\nFinal Answer: The final answer is $16$. I hope it is correct.",
+    },
+    {
+        "problem": "If the system of equations\n\\begin{align*}\n6x-4y&=a,\\\n6y-9x &=b.\n\\end{align*}\nhas a solution $(x, y)$ where $x$ and $y$ are both nonzero, find $\\frac{a}{b},$ assuming $b$ is nonzero.",
+        "solution": "If we multiply the first equation by $-\\frac{3}{2}$, we obtain $$6y-9x=-\\frac{3}{2}a.$$Since we also know that $6y-9x=b$, we have $$-\\frac{3}{2}a=b\\Rightarrow\\frac{a}{b}=\\boxed{-\\frac{2}{3}}.$$\nFinal Answer: The final answer is $-\\frac{2}{3}$. I hope it is correct.",
+    },
+]
+
 
 class MinervaMathTask(Task):
     fewshot_split: str = "train"
+
+    def _build_fewshot(self) -> list[Instance]:
+        """Use fixed 4 examples when fewshot_source is 'minerva_math_fixed' (matches oe-eval Minerva:MATH:fixed)."""
+        if getattr(self.config, "fewshot_source", None) == "minerva_math_fixed":
+            return self._build_fixed_fewshot()
+        return super()._build_fewshot()
+
+    def _build_fixed_fewshot(self) -> list[Instance]:
+        """Build 4 fixed few-shot instances from MINERVA_MATH_FIXED_FEWSHOT."""
+        instances = []
+        for doc in MINERVA_MATH_FIXED_FEWSHOT:
+            solution_text = doc["solution"]
+            extracted = MathExtractor.extract_answer(solution_text)
+            primary = extracted[0] if extracted else None
+            instances.append(
+                Instance(
+                    question=doc["problem"],
+                    gold_answer=primary,
+                    metadata={
+                        "solution_text": solution_text,
+                        "all_gold_answers": extracted if extracted else [],
+                    },
+                )
+            )
+        return instances
 
     @property
     def instances(self) -> Iterator[Instance]:
@@ -106,7 +152,7 @@ def _minerva_math_config(subset: str) -> TaskConfig:
             subset=subset,
         ),
         formatter=CompletionFormatter(
-            template="Problem: {question}\nSolution: ",
+            template="Problem:\n{question}\n\nSolution:",  # match oe-eval minerva style
             fewshot_answer_key="solution_text",
         ),
         metrics=(AccuracyMetric(scorer=MinervaMathScorer),),
@@ -122,7 +168,7 @@ def _math500_config() -> TaskConfig:
         name="math500",
         data_source=DataSource(path="HuggingFaceH4/MATH-500"),
         formatter=CompletionFormatter(
-            template="Problem: {question}\nSolution: ",
+            template="Problem:\n{question}\n\nSolution:",  # match oe-eval minerva style
             fewshot_answer_key="solution_text",
         ),
         metrics=(AccuracyMetric(scorer=MinervaMathScorer),),
@@ -166,11 +212,12 @@ for _subset in MATH_SUBSETS:
         ),
     )
 
-    # 4 samples per instance, pass@1/2/4, temperature 0.6 / top_p 0.6 (matches oe-eval olmes:n4:v2)
+    # 4 samples per instance, pass@1/2/4, temperature 0.6 / top_p 0.6, fixed few-shot (matches oe-eval olmes:n4:v2)
     # Use olmes_n4_v2 (no colon) so spec minerva_math_X:olmes_n4_v2 parses as one variant
     register_variant(
         _task_name,
         "olmes_n4_v2",
+        fewshot_source="minerva_math_fixed",
         metrics=_minerva_olmes_n4_v2_metrics,
         primary_metric=_minerva_pass_at_1,
         sampling_params=SamplingParams(
