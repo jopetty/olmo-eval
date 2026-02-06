@@ -22,6 +22,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "antlr4-python3-runtime>=4.11,<4.12",  # required by sympy parse_latex for minerva_math equivalence
     "click~=8.3.1",
     "datasets>=3.2.0",
     "numpy>=1.20.0",
@@ -36,10 +37,6 @@ Repository = "https://github.com/allenai/olmo-eval"
 Issues = "https://github.com/allenai/olmo-eval/issues"
 
 [project.optional-dependencies]
-# Minerva-style math equivalence (sympy parse_latex). Without it, math tasks use Hendrycks string match only.
-math_latex = [
-    "antlr4-python3-runtime>=4.11,<4.12",
-]
 hf = [
     "transformers~=4.57.3",
 ]
