@@ -3,17 +3,17 @@
 from collections.abc import Iterator
 from typing import Any
 
-from olmo_eval.core.formatters import PPLFormatter
-from olmo_eval.core.metrics import BPBMetric
-from olmo_eval.core.types import Instance, LMOutput, LMRequest, SamplingParams
+from olmo_eval.common.formatters import PPLFormatter
+from olmo_eval.common.metrics import BPBMetric
+from olmo_eval.common.types import Instance, LMOutput, LMRequest, SamplingParams
 from olmo_eval.data import DataLoader, DataSource
 from olmo_eval.evals.constants.code import MBPP_STOP_SEQUENCES
 from olmo_eval.evals.extract import extract_code
-from olmo_eval.evals.tasks.core import Task, TaskConfig, register, register_variant
+from olmo_eval.evals.tasks.common import Task, TaskConfig, register, register_variant
 
 
-class MBPPTask(Task):
-    """MBPP (Mostly Basic Python Problems) task."""
+class MBPPBase(Task):
+    """Base class for MBPP (Mostly Basic Python Problems) tasks."""
 
     default_source: str = "google-research-datasets/mbpp"
 
@@ -92,8 +92,20 @@ class MBPPTask(Task):
         )
 
 
-class MBPPPlusTask(Task):
-    """MBPP+ task with additional test cases."""
+@register("mbpp")
+class MBPP(MBPPBase):
+    """MBPP code generation task."""
+
+    data_source = DataSource(path="google-research-datasets/mbpp")
+    sampling_params = SamplingParams(
+        max_tokens=1024,
+        temperature=0.0,
+        stop_sequences=MBPP_STOP_SEQUENCES,
+    )
+
+
+class MBPPPlusBase(Task):
+    """Base class for MBPP+ tasks with additional test cases."""
 
     default_source: str = "evalplus/mbppplus"
     fewshot_split: str = "test"  # MBPP+ doesn't have a dedicated prompt split
@@ -161,54 +173,16 @@ class MBPPPlusTask(Task):
         return code
 
 
-# =============================================================================
-# Task Configs
-# =============================================================================
-
-
-def _mbpp_config() -> TaskConfig:
-    return TaskConfig(
-        name="mbpp",
-        data_source=DataSource(path="google-research-datasets/mbpp"),
-        metrics=(),
-        sampling_params=SamplingParams(
-            max_tokens=1024,
-            temperature=0.0,
-            stop_sequences=MBPP_STOP_SEQUENCES,
-        ),
-    )
-
-
-def _mbpp_plus_config() -> TaskConfig:
-    return TaskConfig(
-        name="mbpp_plus",
-        data_source=DataSource(path="evalplus/mbppplus"),
-        metrics=(),
-        sampling_params=SamplingParams(
-            max_tokens=1024,
-            temperature=0.0,
-            stop_sequences=MBPP_STOP_SEQUENCES,
-        ),
-    )
-
-
-# =============================================================================
-# Task Registrations
-# =============================================================================
-
-
-@register("mbpp", _mbpp_config)
-class MBPP(MBPPTask):
-    """MBPP code generation task."""
-
-    pass
-
-
-@register("mbpp_plus", _mbpp_plus_config)
-class MBPPPlus(MBPPPlusTask):
+@register("mbpp_plus")
+class MBPPPlus(MBPPPlusBase):
     """MBPP+ code generation task."""
 
-    pass
+    data_source = DataSource(path="evalplus/mbppplus")
+    sampling_params = SamplingParams(
+        max_tokens=1024,
+        temperature=0.0,
+        stop_sequences=MBPP_STOP_SEQUENCES,
+    )
 
 
 # =============================================================================
@@ -221,7 +195,6 @@ register_variant(
     "bpb",
     formatter=PPLFormatter(leading_space=False),
     metrics=(BPBMetric(),),
-    primary_metric=BPBMetric(),
 )
 
 register_variant(
@@ -229,7 +202,6 @@ register_variant(
     "bpb",
     formatter=PPLFormatter(leading_space=False),
     metrics=(BPBMetric(),),
-    primary_metric=BPBMetric(),
 )
 
 # 3shot variant - composable with bpb (e.g., mbpp:3shot:bpb)

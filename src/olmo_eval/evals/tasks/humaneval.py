@@ -3,9 +3,9 @@
 from collections.abc import Iterator, Sequence
 from typing import Any
 
-from olmo_eval.core.formatters import CompletionFormatter, PPLFormatter
-from olmo_eval.core.metrics import BPBMetric
-from olmo_eval.core.types import (
+from olmo_eval.common.formatters import CompletionFormatter, PPLFormatter
+from olmo_eval.common.metrics import BPBMetric
+from olmo_eval.common.types import (
     Instance,
     LMOutput,
     LMRequest,
@@ -15,11 +15,19 @@ from olmo_eval.core.types import (
 from olmo_eval.data import DataLoader, DataSource
 from olmo_eval.evals.constants.code import HUMANEVAL_STOP_SEQUENCES
 from olmo_eval.evals.extract import extract_code
-from olmo_eval.evals.tasks.core import Task, TaskConfig, register, register_variant
+from olmo_eval.evals.tasks.common import Task, TaskConfig, register, register_variant
 
 
-class HumanEvalTask(Task):
+@register("humaneval")
+class HumanEval(Task):
     """HumanEval code generation task."""
+
+    data_source = DataSource(path="openai_humaneval")
+    sampling_params = SamplingParams(
+        max_tokens=1024,
+        temperature=0.0,
+        stop_sequences=HUMANEVAL_STOP_SEQUENCES,
+    )
 
     default_source: str = "openai_humaneval"
     fewshot_split: str = "test"  # HumanEval only has a test split
@@ -82,75 +90,28 @@ class HumanEvalTask(Task):
         """
         return extract_code(output.text)
 
-    def score_responses(self, responses: Sequence[Response]) -> Sequence[Response]:
-        """Apply all scorers to extract answers and compute scores."""
+    def _extract_answers(self, responses: Sequence[Response]) -> None:
+        """Extract code and prepend answer prefix.
+
+        HumanEval follows the original paper setup by adding the prompt
+        to the generated code completion as the prompt may provide additional
+        library imports needed for the code execution.
+        """
         for response in responses:
             for output in response.outputs:
                 code = self.extract_answer(output)
                 if code:
-                    # For Humaneval, we follow the original paper setup by adding the prompt
-                    # to the generated code completion as the prompt may provide additional
-                    # library imports needed for the code execution.
                     output.extracted_answer = response.instance.metadata["answer_prefix"] + code
                 else:
                     output.extracted_answer = None
-        return responses
 
 
-class HumanEvalPlusTask(HumanEvalTask):
+@register("humaneval_plus")
+class HumanEvalPlus(HumanEval):
     """HumanEval+ task with additional test cases."""
 
+    data_source = DataSource(path="evalplus/humanevalplus")
     default_source: str = "evalplus/humanevalplus"
-
-
-# =============================================================================
-# Task Configs
-# =============================================================================
-
-
-def _humaneval_config() -> TaskConfig:
-    return TaskConfig(
-        name="humaneval",
-        data_source=DataSource(path="openai_humaneval"),
-        metrics=(),
-        sampling_params=SamplingParams(
-            max_tokens=1024,
-            temperature=0.0,
-            stop_sequences=HUMANEVAL_STOP_SEQUENCES,
-        ),
-    )
-
-
-def _humaneval_plus_config() -> TaskConfig:
-    return TaskConfig(
-        name="humaneval_plus",
-        data_source=DataSource(path="evalplus/humanevalplus"),
-        metrics=(),
-        sampling_params=SamplingParams(
-            max_tokens=1024,
-            temperature=0.0,
-            stop_sequences=HUMANEVAL_STOP_SEQUENCES,
-        ),
-    )
-
-
-# =============================================================================
-# Task Registrations
-# =============================================================================
-
-
-@register("humaneval", _humaneval_config)
-class HumanEval(HumanEvalTask):
-    """HumanEval code generation task."""
-
-    pass
-
-
-@register("humaneval_plus", _humaneval_plus_config)
-class HumanEvalPlus(HumanEvalPlusTask):
-    """HumanEval+ code generation task."""
-
-    pass
 
 
 # =============================================================================
@@ -165,7 +126,6 @@ register_variant(
     "bpb",
     formatter=PPLFormatter(leading_space=True, answer_prefix=" "),
     metrics=(BPBMetric(),),
-    primary_metric=BPBMetric(),
 )
 
 register_variant(
@@ -173,7 +133,6 @@ register_variant(
     "bpb",
     formatter=PPLFormatter(leading_space=True, answer_prefix=" "),
     metrics=(BPBMetric(),),
-    primary_metric=BPBMetric(),
 )
 
 # 3shot variants - composable with bpb (e.g., humaneval:3shot:bpb)

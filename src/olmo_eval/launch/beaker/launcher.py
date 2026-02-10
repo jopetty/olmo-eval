@@ -30,7 +30,7 @@ from rich.panel import Panel
 from rich.syntax import Syntax
 from rich.text import Text
 
-from olmo_eval.core.constants.infrastructure import (
+from olmo_eval.common.constants.infrastructure import (
     BEAKER_DEFAULT_IMAGE,
     BEAKER_DEFAULT_WORKSPACE,
     BEAKER_KNOWN_CLUSTERS,
@@ -378,7 +378,7 @@ class BeakerJobConfig:
     budget: str  # Beaker budget
 
     # Resources
-    num_gpus: int = 1
+    num_gpus: int = 0
     shared_memory: str = "10GiB"
 
     # Job settings

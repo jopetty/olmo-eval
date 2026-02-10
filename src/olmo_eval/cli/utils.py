@@ -8,18 +8,26 @@ import click
 from rich.console import Console
 
 if TYPE_CHECKING:
-    from olmo_eval.evals.tasks.core.base import TaskConfig
+    from olmo_eval.evals.tasks.common.base import TaskConfig
+    from olmo_eval.harness import HarnessConfig
     from olmo_eval.launch.beaker.launcher import BeakerJobConfig
-    from olmo_eval.launch.config import BeakerModelSpec
 
-console = Console()
+
+@dataclass
+class HarnessSummary:
+    """Display-friendly representation of a Harness."""
+
+    config: "HarnessConfig"
+
+
+console = Console(force_terminal=True, width=120)
 
 
 @dataclass
 class FlaggedArg:
     """Argument with its flag type for order tracking."""
 
-    flag: str  # 'm', 't', or 'o'
+    flag: str  # 't', 'o', or 'h'
     value: str
 
 
@@ -39,7 +47,7 @@ def reconstruct_ordered_args(args: list[str]) -> list[FlaggedArg]:
     """Reconstruct ordered args from command line arguments.
 
     Parses the argument list to determine the order in which
-    -m, -t, and -o options appeared on the command line.
+    -t, -o, and --harness options appeared on the command line.
 
     Args:
         args: List of command line arguments (e.g., sys.argv[1:]).
@@ -49,12 +57,11 @@ def reconstruct_ordered_args(args: list[str]) -> list[FlaggedArg]:
     """
     # Map option flags to their short flag character
     flag_map = {
-        "-m": "m",
-        "--model": "m",
         "-t": "t",
         "--task": "t",
         "-o": "o",
         "--override": "o",
+        "--harness": "h",
     }
 
     ordered: list[FlaggedArg] = []
@@ -83,46 +90,44 @@ def reconstruct_ordered_args(args: list[str]) -> list[FlaggedArg]:
 
 def process_ordered_args(
     ordered: list[FlaggedArg],
-) -> tuple[list[list[str]], dict[str, list[str]]]:
-    """Associate -o overrides with preceding -m or -t.
+) -> tuple[dict[str, list[str]], list[str]]:
+    """Associate -o overrides with preceding -t or --harness.
 
     Args:
         ordered: List of FlaggedArg with flag type and value.
 
     Returns:
-        Tuple of (model_overrides, task_overrides) where:
-        - model_overrides is a list of override lists, one per model (positional)
+        Tuple of (task_overrides, harness_overrides) where:
         - task_overrides is a dict mapping task name to list of override strings
+        - harness_overrides is a list of override strings for the harness
 
     Raises:
-        click.UsageError: If -o appears without a preceding -m or -t.
+        click.UsageError: If -o appears without a preceding -t or --harness.
     """
-    model_overrides: list[list[str]] = []  # Positional: one list per model
     task_overrides: dict[str, list[str]] = {}
+    harness_overrides: list[str] = []
 
-    current_model_index: int = -1
     current_task: str | None = None
     last_flag: str | None = None
 
     for arg in ordered:
-        if arg.flag == "m":
-            model_overrides.append([])
-            current_model_index = len(model_overrides) - 1
-            last_flag = "m"
-        elif arg.flag == "t":
-            current_task = arg.value
+        if arg.flag == "t":
+            # Strip priority suffix (@urgent, @high, etc.) for override key
+            current_task = arg.value.rsplit("@", 1)[0] if "@" in arg.value else arg.value
             task_overrides.setdefault(current_task, [])
             last_flag = "t"
+        elif arg.flag == "h":
+            last_flag = "h"
         elif arg.flag == "o":
-            # Apply to last model or task
-            if last_flag == "m" and current_model_index >= 0:
-                model_overrides[current_model_index].append(arg.value)
-            elif last_flag == "t" and current_task:
+            # Apply to task or harness
+            if last_flag == "t" and current_task:
                 task_overrides[current_task].append(arg.value)
+            elif last_flag == "h":
+                harness_overrides.append(arg.value)
             else:
-                raise click.UsageError("-o/--override must follow -m/--model or -t/--task")
+                raise click.UsageError("-o/--override must follow -t/--task or --harness")
 
-    return model_overrides, task_overrides
+    return task_overrides, harness_overrides
 
 
 def extract_priority_from_overrides(
@@ -171,8 +176,6 @@ class RunnerConfig:
     runner: type
     output_dir: str | None = None
     attention_backend: str | None = None
-    num_workers: int | str | None = None
-    gpus_per_worker: int | None = None
 
     def __repr__(self) -> str:
         parts = [f"runner={self.runner.__name__}"]
@@ -180,10 +183,6 @@ class RunnerConfig:
             parts.append(f"output_dir={self.output_dir!r}")
         if self.attention_backend is not None:
             parts.append(f"attention_backend={self.attention_backend!r}")
-        if self.num_workers is not None:
-            parts.append(f"num_workers={self.num_workers!r}")
-        if self.gpus_per_worker is not None:
-            parts.append(f"gpus_per_worker={self.gpus_per_worker}")
         return f"RunnerConfig({', '.join(parts)})"
 
 
@@ -192,28 +191,10 @@ class ExperimentSummary:
     """Per-experiment summary for beaker launch display."""
 
     name: str
-    models: list["BeakerModelSpec"]
     tasks: list["TaskConfig"]
+    harness: HarnessSummary
     runner: RunnerConfig
     beaker: "BeakerJobConfig"
-
-
-def parse_model_spec(spec: str) -> tuple[str, dict[str, Any]]:
-    """Parse model spec into (model_name, overrides).
-
-    Returns the model name and an empty overrides dict.
-    Use -o flag for overrides instead.
-    """
-    return spec, {}
-
-
-def parse_task_spec_with_overrides(spec: str) -> tuple[str, dict[str, Any]]:
-    """Parse task spec into (task_spec, overrides).
-
-    Returns the task spec and an empty overrides dict.
-    Use -o flag for overrides instead.
-    """
-    return spec, {}
 
 
 def print_runtime_environment() -> None:

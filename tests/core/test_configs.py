@@ -2,8 +2,8 @@
 
 # Import to ensure suites are registered
 import olmo_eval.evals  # noqa: F401
-from olmo_eval.core.configs import ModelConfig, expand_tasks, get_model_config
-from olmo_eval.launch.config import ProviderConfig
+from olmo_eval.common.configs import expand_tasks, get_model_config
+from olmo_eval.harness.config import ProviderConfig
 
 
 class TestExpandTasks:
@@ -66,7 +66,7 @@ class TestGetModelConfig:
         """Test getting a preset model config."""
         config = get_model_config("llama3.1-8b")
 
-        assert isinstance(config, ModelConfig)
+        assert isinstance(config, ProviderConfig)
         assert config.model == "meta-llama/Meta-Llama-3.1-8B"
         assert config.get_provider_name() == "vllm"
 
@@ -79,7 +79,7 @@ class TestGetModelConfig:
 
     def test_get_model_with_override(self):
         """Test getting model with field override."""
-        config = get_model_config("llama3.1-8b", provider=ProviderConfig(kind="hf"))
+        config = get_model_config("llama3.1-8b", kind="hf")
 
         assert config.model == "meta-llama/Meta-Llama-3.1-8B"
         assert config.get_provider_name() == "hf"
@@ -88,7 +88,7 @@ class TestGetModelConfig:
         """Test getting model with multiple overrides."""
         config = get_model_config(
             "llama3.1-8b",
-            provider=ProviderConfig(kind="hf"),
+            kind="hf",
             dtype="float16",
             revision="main",
         )
@@ -101,27 +101,27 @@ class TestGetModelConfig:
         """Test unknown model with overrides."""
         config = get_model_config(
             "custom/model",
-            provider=ProviderConfig(kind="hf"),
+            kind="hf",
         )
 
         assert config.model == "custom/model"
         assert config.get_provider_name() == "hf"
 
     def test_get_model_extra_args_merged(self):
-        """Test that extra_args are merged for presets."""
-        # Override with additional extra_args
+        """Test that kwargs are merged for presets."""
+        # Override with additional kwargs
         config = get_model_config(
             "llama3.1-8b",
-            extra_args={"custom_arg": "value"},
+            kwargs={"custom_arg": "value"},
         )
 
-        assert "custom_arg" in config.extra_args
-        assert config.extra_args["custom_arg"] == "value"
+        assert "custom_arg" in config.kwargs
+        assert config.kwargs["custom_arg"] == "value"
 
     def test_preset_not_mutated(self):
         """Test that getting with overrides doesn't mutate preset."""
         original = get_model_config("llama3.1-8b")
-        _ = get_model_config("llama3.1-8b", provider=ProviderConfig(kind="hf"))
+        _ = get_model_config("llama3.1-8b", kind="hf")
         after = get_model_config("llama3.1-8b")
 
         assert original.get_provider_name() == after.get_provider_name() == "vllm"

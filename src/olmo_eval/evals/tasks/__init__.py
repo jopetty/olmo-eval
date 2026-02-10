@@ -4,10 +4,8 @@ import importlib
 import pkgutil
 from pathlib import Path
 
-# Re-export from core for backward compatibility
-from .core import (
-    AgentTask,
-    AgentTaskConfig,
+# Re-export from common for backward compatibility
+from .common import (
     Task,
     TaskConfig,
     clear_registry,
@@ -26,8 +24,6 @@ from .core import (
 )
 
 __all__ = [
-    "AgentTask",
-    "AgentTaskConfig",
     "Task",
     "TaskConfig",
     "clear_registry",
@@ -51,8 +47,8 @@ def _discover_and_load_tasks() -> None:
     package_dir = Path(__file__).parent
 
     for _finder, module_name, _is_pkg in pkgutil.iter_modules([str(package_dir)]):
-        # Skip the core subpackage and private modules
-        if module_name == "core" or module_name.startswith("_"):
+        # Skip the common subpackage and private modules
+        if module_name == "common" or module_name.startswith("_"):
             continue
 
         # Import the module (triggers @register decorators)

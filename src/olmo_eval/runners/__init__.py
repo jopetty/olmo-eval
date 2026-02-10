@@ -1,15 +1,13 @@
 """Evaluation runners."""
 
-from olmo_eval.runners.agent import AgentEvalRunner
-from olmo_eval.runners.base import BaseEvalRunner
-from olmo_eval.runners.constants import ValidationError
-from olmo_eval.runners.simple import AsyncEvalRunner
+from olmo_eval.runners.asynq import AsyncEvalRunner
+from olmo_eval.runners.common.base import BaseEvalRunner
+from olmo_eval.runners.common.constants import ValidationError
 
 # Backwards-compatible alias
 EvalRunner = AsyncEvalRunner
 
 __all__ = [
-    "AgentEvalRunner",
     "AsyncEvalRunner",
     "BaseEvalRunner",
     "EvalRunner",
