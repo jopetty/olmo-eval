@@ -62,15 +62,14 @@ The evaluation framework is built around these core abstractions:
 Tasks define how to load data, format prompts, and score outputs. Register with `@register`:
 
 ```python
-from olmo_eval.evals.tasks import Task, TaskConfig, register
+from olmo_eval.evals.tasks import Task, register
+from olmo_eval.data import DataSource
 
-@register("my_task", lambda: TaskConfig(
-    name="my_task",
-    data_source="hf://dataset/path",
-    formatter=MultipleChoiceFormatter(),
-    metrics=(AccuracyMetric(scorer=MultipleChoiceScorer),),
-))
-class MyTask(Task): ...
+@register("my_task")
+class MyTask(Task):
+    # DataSource specifies path, subset (optional), and split
+    data_source = DataSource(path="cais/mmlu", subset="abstract_algebra", split="test")
+    ...
 ```
 
 **Regimes** are named presets that override task settings (e.g., few-shot count):
@@ -85,12 +84,11 @@ register_regime("my_task", "olmes", num_fewshot=5, fewshot_seed=42)
 **Runtime Dependencies** allow tasks to specify packages installed at job startup:
 
 ```python
-@register("code_eval", lambda: TaskConfig(
-    name="code_eval",
-    data_source="my-org/code-dataset",
-    dependencies=["code-sandbox==1.0", "git+https://github.com/user/repo@v2.0"],
-))
-class CodeEvalTask(Task): ...
+@register("code_eval")
+class CodeEvalTask(Task):
+    data_source = DataSource(path="my-org/code-dataset", split="test")
+    dependencies = ["code-sandbox==1.0", "git+https://github.com/user/repo@v2.0"]
+    ...
 ```
 
 ### Suites
@@ -413,18 +411,20 @@ Here's a complete, minimal task implementation:
 from collections.abc import Iterator
 from typing import Any
 
-from olmo_eval.common.formatters import MultipleChoiceFormatter
-from olmo_eval.common.metrics import AccuracyMetric
-from olmo_eval.common.scorers import MultipleChoiceScorer
 from olmo_eval.common.types import Instance, LMOutput, LMRequest, RequestType
 from olmo_eval.data import DataLoader, DataSource
-from olmo_eval.evals.tasks import Task, TaskConfig, register
+from olmo_eval.evals.tasks import Task, register
 
 
+@register("my_task")
 class MyTask(Task):
-    """Base class for my task."""
+    """My task implementation."""
 
-    default_source: str = "my-org/my-dataset"
+    # DataSource arguments:
+    #   path: HuggingFace dataset path (e.g., "cais/mmlu")
+    #   subset: Dataset subset/config (e.g., "abstract_algebra")
+    #   split: Dataset split (e.g., "test", "validation")
+    data_source = DataSource(path="cais/mmlu", subset="abstract_algebra", split="test")
 
     @property
     def instances(self) -> Iterator[Instance]:
@@ -432,17 +432,10 @@ class MyTask(Task):
         if self._instances_cache is None:
             self._instances_cache = []
             loader = DataLoader()
-            source = self._get_source_for_split("test")
+            source = self.config.get_data_source()
             for doc in loader.load(source):
                 self._instances_cache.append(self.process_doc(doc))
         yield from self._instances_cache
-
-    def _get_source_for_split(self, split: str) -> DataSource:
-        """Get data source for a specific split."""
-        try:
-            return self.config.get_data_source(split=split)
-        except ValueError:
-            return DataSource(path=self.default_source, split=split)
 
     def process_doc(self, doc: dict[str, Any]) -> Instance:
         """Convert a dataset document to an Instance."""
@@ -463,21 +456,6 @@ class MyTask(Task):
     def extract_answer(self, output: LMOutput) -> str | None:
         """Extract the answer from model output."""
         return output.text.strip()
-
-
-def _my_task_config() -> TaskConfig:
-    return TaskConfig(
-        name="my_task",
-        data_source=DataSource(path="my-org/my-dataset"),
-        formatter=MultipleChoiceFormatter(template="Q: {question}\n\nA:"),
-        metrics=(AccuracyMetric(scorer=MultipleChoiceScorer),),
-    )
-
-
-@register("my_task", _my_task_config)
-class MyTaskImpl(MyTask):
-    """Registered task implementation."""
-    pass
 ```
 
 ### Task Class Overview
@@ -515,8 +493,11 @@ Tasks can load data from multiple sources using `DataSource`:
 ```python
 from olmo_eval.data import DataSource
 
-# HuggingFace datasets
-DataSource(path="cais/mmlu", subset="abstract_algebra")
+# HuggingFace datasets - specify path, subset, and split
+DataSource(path="cais/mmlu", subset="abstract_algebra", split="test")
+
+# Without subset (for datasets that don't have subsets)
+DataSource(path="openai_humaneval", split="test")
 
 # Local JSONL files
 DataSource(path="/path/to/dataset.jsonl")
@@ -526,12 +507,6 @@ DataSource(path="s3://my-bucket/datasets/data.jsonl")
 
 # GCS
 DataSource(path="gs://my-bucket/datasets/data.parquet")
-
-# URI strings are also supported in TaskConfig
-TaskConfig(
-    name="my_task",
-    data_source="hf://cais/mmlu?subset=abstract_algebra",
-)
 ```
 
 ### Common Patterns
@@ -550,16 +525,18 @@ metrics=(AccuracyMetric(scorer=ExactMatchScorer),)
 
 **Tasks with Multiple Subsets** (like MMLU with 57 subjects):
 ```python
+# Base class with shared logic
 class MMLUTask(Task):
-    def __init__(self, config: TaskConfig, subset: str) -> None:
-        super().__init__(config)
-        self.subset = subset
+    ...
 
-# Register each subset
-@register("mmlu_anatomy", _mmlu_anatomy_config)
+# Register each subset - the subset is specified in DataSource
+@register("mmlu_anatomy")
 class MMLUAnatomy(MMLUTask):
-    def __init__(self, config: TaskConfig) -> None:
-        super().__init__(config, subset="anatomy")
+    data_source = DataSource(path="cais/mmlu", subset="anatomy", split="test")
+
+@register("mmlu_physics")
+class MMLUPhysics(MMLUTask):
+    data_source = DataSource(path="cais/mmlu", subset="high_school_physics", split="test")
 ```
 
 ### Adding Variants and Regimes
