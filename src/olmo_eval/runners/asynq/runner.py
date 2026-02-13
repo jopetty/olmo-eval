@@ -18,6 +18,7 @@ from olmo_eval.harness.config import HarnessConfig, ProviderConfig
 from olmo_eval.runners.asynq.monitoring import (
     terminate_workers,
     wait_for_init_times,
+    wait_for_scorer_ready,
     wait_for_workers_ready,
 )
 from olmo_eval.runners.asynq.preparation import (
@@ -25,7 +26,7 @@ from olmo_eval.runners.asynq.preparation import (
     prepare_task_items,
 )
 from olmo_eval.runners.asynq.results import aggregate_results, process_results
-from olmo_eval.runners.asynq.types import QueueItem, TaskTracker
+from olmo_eval.runners.asynq.types import DEFAULT_SCORING_CONCURRENCY, QueueItem, TaskTracker
 from olmo_eval.runners.asynq.workers import inference_worker, scoring_worker
 from olmo_eval.runners.common.base import BaseEvalRunner
 from olmo_eval.runners.common.mixins import RunnerResultsMixin
@@ -74,6 +75,7 @@ class AsyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
     inspect_instance: bool = False
     inspect_formatted: bool = False
     inspect_tokens: bool = False
+    inspect_response: bool = False
     inspect_request: bool = False
 
     # Configuration for print_config display
@@ -168,21 +170,44 @@ class AsyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
         scorer_proc: mp.process.BaseProcess | None = None
 
         try:
-            # Start scoring worker first so it's ready to receive work
-            scorer_proc = ctx.Process(
-                target=scoring_worker,
-                args=(scoring_queue, scored_queue, total_instances),
-            )
-            scorer_proc.start()
+            # Prepare sandbox configs for scoring worker if configured
+            sandbox_configs_list = None
+            if self.harness_config.sandboxes:
+                sandbox_configs_list = [s.to_dict() for s in self.harness_config.sandboxes]
+
+            # Create ready event for scoring worker
+            scorer_ready = ctx.Event()
 
             workers = self._start_workers(
                 ctx, num_workers, total_gpus, item_queue, result_queue, init_times
             )
 
+            scoring_concurrency = (
+                self.harness_config.scoring_concurrency or DEFAULT_SCORING_CONCURRENCY
+            )
+            scorer_proc = ctx.Process(
+                target=scoring_worker,
+                args=(
+                    scoring_queue,
+                    scored_queue,
+                    total_instances,
+                    sandbox_configs_list,
+                    scorer_ready,
+                    scoring_concurrency,
+                ),
+            )
+            scorer_proc.start()
+
             # Wait for workers to initialize
-            logger.info("Waiting for workers to initialize...")
+            logger.info("Waiting for inference workers to initialize...")
             wait_for_workers_ready(workers, result_queue, startup_timeout=60.0)
-            logger.info("Workers initialized successfully")
+            logger.info("Inference workers ready")
+
+            # Now wait for scoring worker (runs in parallel with inference worker init)
+            if sandbox_configs_list is not None:
+                logger.info("Waiting for scoring worker to initialize...")
+                wait_for_scorer_ready(scorer_proc, scorer_ready, scored_queue, timeout=180.0)
+                logger.info("Scoring worker ready")
 
             # Wait for workers to report their init times
             provider_init_seconds = wait_for_init_times(init_times, num_workers)
@@ -217,6 +242,21 @@ class AsyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
                 if worker.is_alive():
                     worker.terminate()
                     worker.join()
+
+            # Optionally inspect first response of each task
+            if self.inspect_response:
+                from olmo_eval.common.inspection import inspect_response
+
+                for spec, tracker in trackers.items():
+                    if tracker.responses:
+                        first_response = next(iter(tracker.responses.values()))
+                        console.print()
+                        inspect_response(
+                            first_response,
+                            console=console,
+                            task_name=spec,
+                        )
+                        break  # Only show first task's first response
 
             # Compute experiment duration
             experiment_duration_seconds = time.time() - experiment_start
@@ -427,6 +467,7 @@ class AsyncEvalRunner(RunnerResultsMixin, BaseEvalRunner):
             task_specs=self.task_specs,
             provider_config=self.provider_config,
             attention_backend=self.attention_backend,
+            harness_config=self.harness_config,
         )
 
     def _finalize_and_save(

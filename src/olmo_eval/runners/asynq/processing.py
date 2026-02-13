@@ -15,6 +15,25 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
+def _format_cause(cause: BaseException) -> str:
+    """Format the cause of an exception with fallback for empty strings."""
+    cause_type = type(cause).__qualname__
+    cause_str = str(cause)
+
+    # If str(cause) is non-empty, use it
+    if cause_str:
+        return f"{cause_type}: {cause_str}"
+
+    # Try args (often contains the real message)
+    if cause.args:
+        args_str = ", ".join(str(a) for a in cause.args if a)
+        if args_str:
+            return f"{cause_type}: {args_str}"
+
+    # Just return the type name
+    return cause_type
+
+
 def _format_error_detail(exc: Exception) -> str:
     """Format exception with HTTP details for debugging."""
     parts = [f"type: {type(exc).__qualname__}"]
@@ -40,7 +59,7 @@ def _format_error_detail(exc: Exception) -> str:
     # Root cause (e.g., httpx.ReadTimeout)
     cause = exc.__cause__
     if cause is not None:
-        parts.append(f"cause: {type(cause).__qualname__}: {cause}")
+        parts.append(f"cause: {_format_cause(cause)}")
 
     return " | ".join(parts)
 
@@ -62,8 +81,17 @@ async def process_chat_request(
     """
     from dataclasses import replace as dataclass_replace
 
+    # Build trace metadata for observability
+    trace_metadata = {
+        "task_id": item.task_id,
+        "instance_idx": item.instance_idx,
+        "instance_id": item.instance.metadata.get("id", str(item.instance_idx)),
+    }
+
     try:
-        harness_result = await harness.run(item.request, item.sampling_params)
+        harness_result = await harness.run(
+            item.request, item.sampling_params, trace_metadata=trace_metadata
+        )
         final_output = harness_result.final_output
 
         if harness_result.trajectory is not None:
@@ -206,6 +234,8 @@ async def process_items(
             batchable_items.append(item)
 
     if batchable_items:
+        from olmo_eval.common.progress import ProgressLogger
+
         batches: dict[tuple[RequestType, SamplingParams | None], list[QueueItem]] = {}
         for item in batchable_items:
             key = (item.request.request_type, item.sampling_params)
@@ -213,25 +243,29 @@ async def process_items(
                 batches[key] = []
             batches[key].append(item)
 
+        progress = ProgressLogger(
+            total=len(batchable_items), desc="Processed", logger=logger, color="green"
+        )
         for batch in batches.values():
             await process_batch(batch, harness, result_queue)
+            progress.update(len(batch))
+        progress.close()
 
     if chat_items:
-        from tqdm import tqdm
-        from tqdm.contrib.logging import logging_redirect_tqdm
+        from olmo_eval.common.progress import ProgressLogger
 
         semaphore = asyncio.Semaphore(max_concurrency or len(chat_items))
+        progress = ProgressLogger(
+            total=len(chat_items), desc="Processed", logger=logger, color="green"
+        )
 
-        async def process(item: QueueItem, pbar: tqdm) -> None:
+        async def process(item: QueueItem) -> None:
             async with semaphore:
                 await process_chat_request(item, harness, result_queue)
-                pbar.update(1)
+                progress.update(1)
 
-        with (
-            logging_redirect_tqdm(),
-            tqdm(total=len(chat_items), desc="Processing instances", unit="inst") as pbar,
-        ):
-            await asyncio.gather(*[process(item, pbar) for item in chat_items])
+        await asyncio.gather(*[process(item) for item in chat_items])
+        progress.close()
 
 
 __all__ = [

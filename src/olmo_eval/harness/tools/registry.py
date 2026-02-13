@@ -136,6 +136,7 @@ def registered_tool(
     name: str | None = None,
     description: str | None = None,
     strict: bool = False,
+    sandbox: set[str] | frozenset[str] | None = None,
 ) -> Callable[[Callable[..., Awaitable[str] | str]], Tool]:
     """Decorator to create and register a Tool from a function.
 
@@ -150,6 +151,7 @@ def registered_tool(
         name: Optional name override for the tool.
         description: Optional description override.
         strict: Whether to use OpenAI strict mode.
+        sandbox: Required sandbox capabilities for execution.
 
     Returns:
         Decorator function that converts a function to a registered Tool.
@@ -157,7 +159,13 @@ def registered_tool(
     from .tool import Tool
 
     def decorator(fn: Callable[..., Awaitable[str] | str]) -> Tool:
-        t = Tool.from_function(fn, name=name, description=description, strict=strict)
+        t = Tool.from_function(
+            fn,
+            name=name,
+            description=description,
+            strict=strict,
+            sandbox=sandbox,
+        )
         return register_tool(t)
 
     # Handle @registered_tool without parentheses

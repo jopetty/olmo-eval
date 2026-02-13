@@ -21,7 +21,6 @@ def prepare_task_items(
     spec: str,
     model_name: str,
     overrides: dict[str, Any] | None,
-    temperature: float | None = None,
     sampling_overrides: dict[str, Any] | None = None,
 ) -> tuple[Task, list[QueueItem]]:
     """Prepare a task and its queue items.
@@ -30,7 +29,6 @@ def prepare_task_items(
         spec: Task specification string
         model_name: Model name this task is for
         overrides: Optional config overrides (num_fewshot, limit, fewshot_seed)
-        temperature: Optional temperature for sampling (deprecated, use sampling_overrides)
         sampling_overrides: Optional overrides for sampling params (temperature, max_tokens, etc.)
 
     Returns:
@@ -43,14 +41,9 @@ def prepare_task_items(
         task.config = replace(task.config, **overrides)
 
     # Build sampling params from overrides
-    # Priority: sampling_overrides > temperature > task default
     existing_params = task.config.sampling_params or SamplingParams()
 
-    # Apply legacy temperature parameter (deprecated)
-    if temperature is not None:
-        existing_params = replace(existing_params, temperature=temperature)
-
-    # Apply sampling_overrides (highest priority)
+    # Apply sampling_overrides
     if sampling_overrides:
         for key, value in sampling_overrides.items():
             if hasattr(existing_params, key):
@@ -101,7 +94,7 @@ def build_requests_from_items(items: list[QueueItem], task_name: str) -> list[di
     return build_requests(instances, requests, task_name, sampling_params)
 
 
-def finalize_task(tracker: TaskTracker) -> TaskResult:
+async def finalize_task(tracker: TaskTracker) -> TaskResult:
     """Finalize a task tracker into a TaskResult.
 
     Args:
@@ -152,7 +145,7 @@ def finalize_task(tracker: TaskTracker) -> TaskResult:
     responses = [tracker.responses[i] for i in sorted(tracker.responses.keys())]
 
     # Score and compute metrics
-    scored = tracker.task.score_responses(responses)
+    scored = await tracker.task.score_responses(responses)
     metrics = tracker.task.compute_metrics(scored)
 
     # Build predictions
@@ -181,8 +174,7 @@ def finalize_task(tracker: TaskTracker) -> TaskResult:
         duration_seconds=duration,
         predictions=predictions,
         primary_metric=primary_metric,
-        # Include error summary if there were partial failures
-        error=error_summary if tracker.failed_instances else None,
+        # Only set error if ALL instances failed (partial failures are logged as warnings)
     )
 
 
@@ -251,7 +243,7 @@ def compute_task_metrics(
         duration_seconds=duration_seconds,
         predictions=predictions,
         primary_metric=primary_metric,
-        error=error_summary,
+        # Only set error if ALL instances failed (partial failures are logged as warnings)
     )
 
 

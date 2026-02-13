@@ -7,7 +7,7 @@ how the harness executes requests.
 from __future__ import annotations
 
 import logging
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from olmo_eval.common.types import LMRequest, SamplingParams
 from olmo_eval.harness.config import HarnessConfig
@@ -31,12 +31,25 @@ class Backend:
     name: str = "base"
     required_extras: tuple[str, ...] = ()
 
+    async def initialize(self, config: HarnessConfig) -> None:
+        """Initialize backend resources like sandbox managers.
+
+        Called during worker startup before processing begins.
+        Subclasses should override to set up resources that need
+        to be ready before the first request.
+
+        Args:
+            config: Harness configuration.
+        """
+        pass
+
     async def run(
         self,
         provider: InferenceProvider,
         config: HarnessConfig,
         request: LMRequest,
         sampling_params: SamplingParams | None = None,
+        trace_metadata: dict[str, Any] | None = None,
     ) -> HarnessResult:
         """Execute the request and return the result.
 
@@ -45,6 +58,7 @@ class Backend:
             config: Harness configuration (tools, system prompt, etc.).
             request: The initial request to process.
             sampling_params: Optional sampling parameters override.
+            trace_metadata: Optional metadata for tracing (e.g., instance_id, task_id).
 
         Returns:
             HarnessResult with trajectory and final output.
@@ -53,6 +67,14 @@ class Backend:
             NotImplementedError: If this backend doesn't support run().
         """
         raise NotImplementedError(f"Backend '{self.name}' does not support run()")
+
+    async def cleanup(self) -> None:
+        """Clean up resources held by this backend.
+
+        Subclasses should override this to clean up any resources like
+        sandbox managers, connections, etc.
+        """
+        pass
 
 
 # -----------------------------------------------------------------------------
@@ -133,6 +155,34 @@ def get_backend_extras(name: str) -> tuple[str, ...]:
     return BACKEND_REGISTRY[name].required_extras
 
 
+def validate_backend(name: str) -> None:
+    """Validate that a backend's requirements are satisfied.
+
+    This should be called early (e.g., during worker initialization) to
+    fail fast if required dependencies are missing.
+
+    Args:
+        name: Backend name to validate.
+
+    Raises:
+        ImportError: If the backend's required dependencies are not installed.
+        ValueError: If backend name is unknown.
+    """
+    if name not in BACKEND_REGISTRY:
+        available = ", ".join(sorted(BACKEND_REGISTRY.keys()))
+        raise ValueError(f"Unknown backend: '{name}'. Available: {available}")
+
+    # Check required extras by attempting to import key modules
+    if name == "openai_agents":
+        try:
+            import agents  # type: ignore[import-not-found]  # noqa: F401
+        except ImportError as e:
+            raise ImportError(
+                f"Backend '{name}' requires the OpenAI Agents SDK. "
+                f"Install with: pip install openai-agents. Error: {e}"
+            ) from e
+
+
 # Import backends to trigger registration
 from .openai_agents import OpenAIAgentsBackend  # noqa: E402
 
@@ -144,4 +194,5 @@ __all__ = [
     "get_backend_extras",
     "list_backends",
     "register_backend",
+    "validate_backend",
 ]

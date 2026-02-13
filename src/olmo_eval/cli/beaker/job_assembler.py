@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from olmo_eval.common.constants.infrastructure import BEAKER_RESULT_DIR, cluster_has_weka
+from olmo_eval.launch.beaker.mirror import log
 
 if TYPE_CHECKING:
     from olmo_eval.cli.beaker.config_loader import LaunchConfig
@@ -26,6 +27,8 @@ class JobConfigAssembler:
         task_secrets: list[tuple[str, str]],
         inject_aws_credentials: bool,
         inject_gcs_credentials: bool,
+        enable_sandbox: bool = False,
+        secret_env_overrides: dict[str, str] | None = None,
     ):
         self.config = config
         self.effective_image = effective_image
@@ -36,6 +39,8 @@ class JobConfigAssembler:
         self.task_secrets = task_secrets
         self.inject_aws_credentials = inject_aws_credentials
         self.inject_gcs_credentials = inject_gcs_credentials
+        self.enable_sandbox = enable_sandbox
+        self.secret_env_overrides = secret_env_overrides or {}
 
     def assemble(self, exp: ExperimentPlan) -> BeakerJobConfig:
         """Assemble a BeakerJobConfig for an experiment."""
@@ -55,6 +60,9 @@ class JobConfigAssembler:
             if preset.backend:
                 backend_extras = get_backend_extras(preset.backend)
                 install_extras.extend(backend_extras)
+            # Install sandbox extra for any sandbox mode (local, docker, or modal)
+            if preset.sandboxes:
+                install_extras.append("sandbox")
 
         # Get provider extras from model preset (takes precedence over harness default)
         from olmo_eval.common.configs import get_provider_config
@@ -64,14 +72,29 @@ class JobConfigAssembler:
         if provider_group and provider_group not in install_extras:
             install_extras.append(provider_group)
 
+        # Collect env vars that have explicit overrides
+        overridden_env_vars = set(self.secret_env_overrides.values())
+
+        # Add default secrets, skipping any that are overridden
         env_secrets = [
-            BeakerEnvSecret(env_var, secret_name) for env_var, secret_name in self.common_secrets
+            BeakerEnvSecret(env_var, secret_name)
+            for env_var, secret_name in self.common_secrets
+            if env_var not in overridden_env_vars
         ]
         env_secrets.extend(
-            BeakerEnvSecret(env_var, secret_name) for env_var, secret_name in self.store_secrets
+            BeakerEnvSecret(env_var, secret_name)
+            for env_var, secret_name in self.store_secrets
+            if env_var not in overridden_env_vars
         )
         env_secrets.extend(
-            BeakerEnvSecret(env_var, secret_name) for env_var, secret_name in self.task_secrets
+            BeakerEnvSecret(env_var, secret_name)
+            for env_var, secret_name in self.task_secrets
+            if env_var not in overridden_env_vars
+        )
+        # Add explicit secret overrides (beaker_secret -> env_var)
+        env_secrets.extend(
+            BeakerEnvSecret(env_var, beaker_secret)
+            for beaker_secret, env_var in self.secret_env_overrides.items()
         )
 
         job_env_vars: dict[str, str] = {
@@ -89,6 +112,20 @@ class JobConfigAssembler:
             )
             if self.config.uv_cache_dir:
                 job_env_vars["UV_CACHE_DIR"] = self.config.uv_cache_dir
+
+        # Configure sandbox environment and registry mirror
+        setup_registry_mirror = False
+        log.info(f"Sandbox enabled: {self.enable_sandbox}")
+        if self.enable_sandbox:
+            job_env_vars["BEAKER_ALLOW_SUBCONTAINERS"] = "1"
+            job_env_vars["BEAKER_SKIP_DOCKER_SOCKET"] = "1"
+
+            # Get registry mirror URL for faster image pulls (raises if unavailable)
+            from olmo_eval.launch.beaker.mirror import get_registry_mirror_url
+
+            mirror_url = get_registry_mirror_url()
+            job_env_vars["MIRROR_HOSTS"] = mirror_url
+            setup_registry_mirror = True
 
         task_packages = self._extract_task_dependencies(exp.tasks, exp.task_overrides)
 
@@ -112,6 +149,8 @@ class JobConfigAssembler:
             env_vars=job_env_vars,
             env_secrets=env_secrets,
             task_packages=task_packages,
+            enable_sandbox=self.enable_sandbox,
+            setup_registry_mirror=setup_registry_mirror,
         )
 
     def _extract_task_dependencies(

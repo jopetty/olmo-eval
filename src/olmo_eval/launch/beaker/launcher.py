@@ -411,6 +411,12 @@ class BeakerJobConfig:
     # Follow mode - when True, wait for experiment to complete
     follow: bool = False
 
+    # Sandbox mode - when True, use Podman-enabled base image and set sandbox env vars
+    enable_sandbox: bool = False
+
+    # Registry mirror setup script to run during install (for sandbox jobs)
+    setup_registry_mirror: bool = False
+
 
 def resolve_clusters(cluster: str | list[str]) -> list[str]:
     """Resolve cluster aliases to full cluster names.
@@ -544,6 +550,7 @@ class BeakerLauncher:
         env_exports: dict[str, str] | None = None,
         provider_package: str | None = None,
         task_packages: list[str] | None = None,
+        setup_registry_mirror: bool = False,
     ) -> str:
         """Build installation command for gantry's install_cmd parameter.
 
@@ -557,6 +564,7 @@ class BeakerLauncher:
             env_exports: Optional dict of environment variables to export before running.
             provider_package: Optional custom provider package to install (overrides default).
             task_packages: Optional list of task-specific packages to install.
+            setup_registry_mirror: If True, run setup_dockerio_mirror script with MIRROR_HOSTS.
 
         Returns:
             Shell command string for installation.
@@ -564,6 +572,11 @@ class BeakerLauncher:
         # Build the install steps
         # Export UV_PROJECT_ENVIRONMENT so all uv commands use Docker's /opt/venv
         steps = ["export UV_PROJECT_ENVIRONMENT=/opt/venv"]
+
+        # Set up registry mirror for Docker Hub if configured (for sandbox jobs)
+        if setup_registry_mirror:
+            script = "/gantry-runtime/src/olmo_eval/launch/beaker/podman/setup_dockerio_mirror"
+            steps.append(f'if [ -n "$MIRROR_HOSTS" ]; then {script} "$MIRROR_HOSTS"; fi')
 
         # Export additional environment variables (e.g., UV_CACHE_DIR)
         if env_exports:
@@ -619,6 +632,7 @@ class BeakerLauncher:
             env_exports,
             config.provider_package,
             config.task_packages,
+            config.setup_registry_mirror,
         )
 
         # Build weka mounts as tuples: (bucket, mount_path)
@@ -650,6 +664,9 @@ class BeakerLauncher:
 
         # Build env vars as tuples: (name, value)
         env_vars: list[tuple[str, str]] = list(config.env_vars.items())
+
+        if config.enable_sandbox:
+            log.info("Enabling sandbox mode with Podman subcontainers")
 
         # Build mounts for NFS if requested
         mounts: list[tuple[str, str]] | None = None

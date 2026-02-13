@@ -22,6 +22,8 @@ from olmo_eval.cli.utils import console
 from olmo_eval.common.constants import get_model_presets
 from olmo_eval.evals.suites import get_suite, list_suites
 from olmo_eval.evals.tasks.common import list_regimes, list_tasks, list_variants
+from olmo_eval.harness.backends import BACKEND_REGISTRY
+from olmo_eval.harness.presets import get_harness_preset, list_harness_presets
 
 
 @click.group()
@@ -84,7 +86,10 @@ def _format_value(value: object) -> str:
             return ""
         return "\n".join(f"{k}={v}" for k, v in value.items())
     if isinstance(value, (list, tuple)):
-        return "\n".join(str(v) for v in value) if value else ""
+        if not value:
+            return ""
+        formatted_items = [_format_value(v) for v in value]
+        return "\n".join(f for f in formatted_items if f)
     if isinstance(value, bool):
         return str(value) if value else ""
     return str(value) if value else ""
@@ -122,6 +127,49 @@ def models(filter: str) -> None:
 
             console.print(Panel(table, title=f"[cyan]{name}[/cyan]", title_align="left"))
             console.print()
+
+
+@main.command()
+@click.option("--filter", "-f", default="", help="Filter by name substring")
+def harnesses(filter: str) -> None:
+    """List available harness presets."""
+    from rich.panel import Panel
+    from rich.pretty import Pretty
+
+    preset_names = list_harness_presets()
+    if not preset_names:
+        console.print("[dim]No harness presets registered.[/dim]")
+        return
+
+    for name in sorted(preset_names):
+        if filter.lower() not in name.lower():
+            continue
+
+        cfg = get_harness_preset(name)
+        console.print(
+            Panel(
+                Pretty(cfg, expand_all=True),
+                title=f"[bold]{name}[/bold]",
+                border_style="cyan",
+            )
+        )
+        console.print()
+
+
+@main.command()
+@click.option("--filter", "-f", default="", help="Filter by name substring")
+def backends(filter: str) -> None:
+    """List available harness backends."""
+    table = Table(title="Harness Backends")
+    table.add_column("Backend", style="cyan")
+    table.add_column("Required Extra", style="yellow")
+
+    for name, cls in sorted(BACKEND_REGISTRY.items()):
+        if filter.lower() in name.lower():
+            extras = ", ".join(cls.required_extras) if cls.required_extras else "-"
+            table.add_row(name, extras)
+
+    console.print(table)
 
 
 @main.command()

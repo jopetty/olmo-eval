@@ -5,11 +5,20 @@ from __future__ import annotations
 import asyncio
 import multiprocessing as mp
 import os
+import queue
 import time
+from multiprocessing.synchronize import Event as MPEvent
 from typing import Any
 
 from olmo_eval.common.logging import get_logger
-from olmo_eval.runners.asynq.types import WORKER_FATAL_TASK_ID, QueueItem, ResultItem
+from olmo_eval.runners.asynq.types import (
+    DEFAULT_SCORING_CONCURRENCY,
+    SCORER_FATAL,
+    WORKER_FATAL,
+    QueueItem,
+    ResultItem,
+    ScoredResponse,
+)
 
 logger = get_logger(__name__)
 
@@ -80,8 +89,10 @@ def inference_worker(
         has_tools = harness_config.has_tools
         enable_auto_tool_choice = has_tools and provider_kind == "vllm_server"
 
-        # Set log_dir for vllm_server provider to persist server logs
-        log_dir = output_dir if provider_kind == "vllm_server" and output_dir else None
+        # Set log_dir for vllm_server provider to persist server logs (in logs/ subdir)
+        log_dir = None
+        if provider_kind == "vllm_server" and output_dir:
+            log_dir = os.path.join(output_dir, "logs")
 
         harness_config = harness_config.with_provider_overrides(
             tensor_parallel_size=len(gpu_ids) if gpu_ids else None,
@@ -99,6 +110,12 @@ def inference_worker(
         # Force provider creation to catch import errors early
         _ = harness.provider
 
+        # Validate backend requirements early to fail fast
+        if harness_config.backend:
+            from olmo_eval.harness.backends import validate_backend
+
+            validate_backend(harness_config.backend)
+
         init_time = time.time() - init_start
         worker_logger.info(f"Provider ready ({init_time:.1f}s)")
 
@@ -106,6 +123,16 @@ def inference_worker(
             init_times[worker_id] = init_time
 
         try:
+            # Configure agent trace output if using openai_agents backend
+            if harness_config.backend == "openai_agents" and output_dir:
+                from olmo_eval.harness.backends.tracing import configure_trace_output
+
+                configure_trace_output(output_dir)
+
+            # Initialize backend resources (e.g., sandbox manager) before processing
+            if harness_config.backend:
+                asyncio.run(harness.backend.initialize(harness_config))
+
             items: list[QueueItem] = []
             while True:
                 item = item_queue.get()
@@ -120,6 +147,9 @@ def inference_worker(
 
             worker_logger.info("Processing complete")
         finally:
+            # Clean up harness resources (including sandbox manager)
+            asyncio.run(harness.cleanup())
+            # Clean up provider
             close_fn = getattr(harness.provider, "close", None)
             if callable(close_fn):
                 close_fn()
@@ -129,7 +159,7 @@ def inference_worker(
         result_queue.put(
             ResultItem(
                 model_name=model_name,
-                task_id=WORKER_FATAL_TASK_ID,
+                task_id=WORKER_FATAL,
                 instance_idx=-1,
                 instance=None,  # type: ignore[arg-type]
                 request=None,  # type: ignore[arg-type]
@@ -144,65 +174,180 @@ def scoring_worker(
     scoring_queue: mp.Queue,
     scored_queue: mp.Queue,
     total_instances: int,
+    sandbox_configs_list: list[dict[str, Any]] | None = None,
+    ready_event: MPEvent | None = None,
+    max_concurrency: int = DEFAULT_SCORING_CONCURRENCY,
 ) -> None:
-    """Worker process that scores individual responses.
+    """Worker process that scores responses with concurrent execution.
 
-    Reads ScoringItems from scoring_queue, scores each response, and puts
+    Reads ScoringItems from scoring_queue, scores them concurrently, and puts
     ScoredResponses on scored_queue.
+
+    This worker manages sandbox lifecycle when sandbox configs are provided,
+    similar to how inference_worker manages provider lifecycle.
 
     Args:
         scoring_queue: Queue of ScoringItems (None signals shutdown).
         scored_queue: Queue to put ScoredResponses.
-        total_instances: Total number of instances to score (for progress bar).
+        total_instances: Total number of instances to score (for progress).
+        sandbox_configs_list: Optional list of serialized SandboxConfigs for code execution.
+        ready_event: Optional event to signal when worker is ready.
+        max_concurrency: Maximum concurrent scoring operations.
     """
-    from tqdm import tqdm
+    import sys
 
     from olmo_eval.common.logging import configure_logging
 
     configure_logging()
 
-    from olmo_eval.runners.asynq.types import ScoredResponse, ScoringItem
+    from olmo_eval.common.execution import ScoringContext
+    from olmo_eval.common.progress import ProgressLogger
+    from olmo_eval.runners.asynq.types import ScoringItem
 
-    pbar: tqdm | None = None
+    sandbox_manager = None
+    scoring_context: ScoringContext | None = None
 
-    def score_item(item: ScoringItem) -> None:
-        try:
-            # Score single response
-            scored_list = item.task.score_responses([item.response])
-            scored = scored_list[0] if scored_list else item.response
-            scored_queue.put(
-                ScoredResponse(
+    async def score_item_async(
+        item: ScoringItem, context: ScoringContext | None, semaphore: asyncio.Semaphore
+    ) -> ScoredResponse:
+        """Score a single item with semaphore-controlled concurrency."""
+        async with semaphore:
+            try:
+                scored_list = await item.task.score_responses([item.response], context=context)
+                scored = scored_list[0] if scored_list else item.response
+                return ScoredResponse(
                     spec=item.spec,
                     instance_idx=item.instance_idx,
                     scored=scored,
                 )
-            )
-        except Exception as e:
-            # On error, return the original response (unscored)
-            logger.warning(f"Failed to score {item.spec}[{item.instance_idx}]: {e}")
-            scored_queue.put(
-                ScoredResponse(
+            except Exception as e:
+                logger.warning(f"Failed to score {item.spec}[{item.instance_idx}]: {e}")
+                return ScoredResponse(
                     spec=item.spec,
                     instance_idx=item.instance_idx,
                     scored=item.response,
                 )
-            )
+
+    async def process_batch(
+        items: list[ScoringItem],
+        context: ScoringContext | None,
+        progress: ProgressLogger,
+    ) -> None:
+        """Process a batch of items concurrently."""
+        semaphore = asyncio.Semaphore(max_concurrency)
+        tasks = [score_item_async(item, context, semaphore) for item in items]
+        results = await asyncio.gather(*tasks)
+
+        for result in results:
+            scored_queue.put(result)
+            progress.update(1)
+
+    async def run_scoring_loop() -> None:
+        """Main async scoring loop."""
+        progress: ProgressLogger | None = None
+        batch: list[ScoringItem] = []
+        batch_size = max_concurrency * 2  # Buffer 2x concurrency for efficiency
+
+        try:
+            while True:
+                # Non-blocking check with timeout to allow batching
+                try:
+                    item: ScoringItem | None = scoring_queue.get(timeout=0.1)
+                except queue.Empty:
+                    # Timeout - flush any pending batch
+                    if batch:
+                        if progress is None:
+                            progress = ProgressLogger(
+                                total=total_instances,
+                                desc="Scored",
+                                logger=logger,
+                                color="blue",
+                            )
+                        await process_batch(batch, scoring_context, progress)
+                        batch = []
+                    continue
+
+                if item is None:
+                    # Shutdown signal - process remaining batch and exit
+                    if batch:
+                        if progress is None:
+                            progress = ProgressLogger(
+                                total=total_instances,
+                                desc="Scored",
+                                logger=logger,
+                                color="blue",
+                            )
+                        await process_batch(batch, scoring_context, progress)
+                    break
+
+                # Create progress logger on first item
+                if progress is None:
+                    progress = ProgressLogger(
+                        total=total_instances, desc="Scored", logger=logger, color="blue"
+                    )
+
+                batch.append(item)
+
+                # Process batch when full
+                if len(batch) >= batch_size:
+                    await process_batch(batch, scoring_context, progress)
+                    batch = []
+
+        finally:
+            if progress is not None:
+                progress.close()
 
     try:
-        while True:
-            item: ScoringItem | None = scoring_queue.get()
-            if item is None:
-                break
+        if sandbox_configs_list is not None:
+            from olmo_eval.harness.sandbox import SandboxConfig, SandboxManager
 
-            # Create progress bar on first item (after worker startup logs)
-            if pbar is None:
-                pbar = tqdm(total=total_instances, desc="Scoring instances", unit="inst")
+            sandbox_configs = [SandboxConfig.from_dict(d) for d in sandbox_configs_list]
+            logger.info(f"Initializing sandbox manager with {len(sandbox_configs)} config(s)...")
+            sandbox_manager = SandboxManager(sandbox_configs, owner="scorer")
 
-            score_item(item)
-            pbar.update(1)
+            # Start sandbox synchronously using asyncio
+            try:
+                asyncio.run(sandbox_manager.start())
+            except Exception as e:
+                logger.error(f"Failed to start sandbox: {e}")
+                scored_queue.put(
+                    ScoredResponse(
+                        spec=SCORER_FATAL,
+                        instance_idx=-1,
+                        scored=None,
+                        error=f"Sandbox initialization failed: {e}",
+                    )
+                )
+                sys.exit(1)
+
+            scoring_context = ScoringContext(execution_env=sandbox_manager)
+
+        # Signal that worker is ready
+        if ready_event is not None:
+            ready_event.set()
+
+        # Run the async scoring loop
+        asyncio.run(run_scoring_loop())
+
+    except Exception as e:
+        logger.error(f"Scoring worker failed: {e}")
+        # Signal fatal error via the scored queue
+        scored_queue.put(
+            ScoredResponse(
+                spec=SCORER_FATAL,
+                instance_idx=-1,
+                scored=None,
+                error=f"Scoring worker crashed: {e}",
+            )
+        )
+        sys.exit(1)
+
     finally:
-        if pbar is not None:
-            pbar.close()
+        if sandbox_manager is not None:
+            try:
+                asyncio.run(sandbox_manager.stop())
+            except Exception as e:
+                logger.warning(f"Failed to stop sandbox: {e}")
 
 
 __all__ = [

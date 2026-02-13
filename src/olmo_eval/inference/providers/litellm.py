@@ -128,8 +128,8 @@ class LiteLLMProvider(InferenceProvider):
             kwargs["temperature"] = params.temperature
         if params.stop_sequences:
             kwargs["stop"] = list(params.stop_sequences)[:_MAX_STOP_SEQUENCES]
-        if params.logprobs is not None:
-            kwargs["logprobs"] = True
+        # Always request logprobs for metrics computation
+        kwargs["logprobs"] = True
 
         response = await self._litellm.acompletion(**kwargs)
 
@@ -139,6 +139,7 @@ class LiteLLMProvider(InferenceProvider):
 
             # Convert logprobs to standard format
             logprob_entries: list[LogProbEntry] | None = None
+            metadata: dict[str, Any] = {}
             logprobs_data = getattr(choice, "logprobs", None)
             if logprobs_data and hasattr(logprobs_data, "content") and logprobs_data.content:
                 logprob_entries = []
@@ -149,7 +150,16 @@ class LiteLLMProvider(InferenceProvider):
                         entry["bytes"] = lp_bytes
                     logprob_entries.append(entry)
 
-            outputs.append(LMOutput(text=text, logprobs=logprob_entries))
+                # Compute metadata from logprobs
+                sum_logits = sum(entry["logprob"] for entry in logprob_entries)
+                num_tokens = len(logprob_entries)
+                metadata = {
+                    "sum_logits": sum_logits,
+                    "num_tokens": num_tokens,
+                    "num_tokens_all": num_tokens,
+                }
+
+            outputs.append(LMOutput(text=text, logprobs=logprob_entries, metadata=metadata))
 
         return outputs
 
@@ -182,7 +192,7 @@ class LiteLLMProvider(InferenceProvider):
         Returns:
             List of output lists, one per request.
         """
-        from tqdm import tqdm
+        from olmo_eval.common.progress import ProgressLogger
 
         logger.info(
             f"Sending {len(requests)} requests for {self.model_name}"
@@ -191,16 +201,16 @@ class LiteLLMProvider(InferenceProvider):
 
         params = self._default_sampling_params(sampling_params)
         semaphore = asyncio.Semaphore(self.max_concurrency)
-        pbar = tqdm(total=len(requests), desc="Processing instances", unit="inst")
+        progress = ProgressLogger(total=len(requests), desc="Generating", logger=logger)
 
         async def process(req: LMRequest) -> list[LMOutput]:
             async with semaphore:
                 result = await self._generate_single_async(req, params)
-                pbar.update(1)
+                progress.update(1)
                 return result
 
         results = await asyncio.gather(*[process(r) for r in requests])
-        pbar.close()
+        progress.close()
         return list(results)
 
     def generate(
@@ -292,7 +302,7 @@ class LiteLLMProvider(InferenceProvider):
         Returns:
             List of output lists with logprobs populated.
         """
-        from tqdm import tqdm
+        from olmo_eval.common.progress import ProgressLogger
 
         logger.info(
             f"Sending {len(requests)} logprob requests for {self.model_name}"
@@ -300,16 +310,16 @@ class LiteLLMProvider(InferenceProvider):
         )
 
         semaphore = asyncio.Semaphore(self.max_concurrency)
-        pbar = tqdm(total=len(requests), desc="Processing instances", unit="inst")
+        progress = ProgressLogger(total=len(requests), desc="Logprobs", logger=logger)
 
         async def process(req: LMRequest) -> list[LMOutput]:
             async with semaphore:
                 result = await self._logprobs_single_async(req)
-                pbar.update(1)
+                progress.update(1)
                 return result
 
         results = await asyncio.gather(*[process(r) for r in requests])
-        pbar.close()
+        progress.close()
         return list(results)
 
     def logprobs(

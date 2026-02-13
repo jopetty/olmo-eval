@@ -14,7 +14,8 @@ from olmo_eval.common.types.trajectory import AgentTrajectory
 from olmo_eval.runners.asynq.monitoring import check_workers_alive
 from olmo_eval.runners.asynq.preparation import compute_task_metrics, finalize_task
 from olmo_eval.runners.asynq.types import (
-    WORKER_FATAL_TASK_ID,
+    SCORER_FATAL,
+    WORKER_FATAL,
     ResultItem,
     ScoredResponse,
     ScoringItem,
@@ -71,32 +72,26 @@ async def process_results(
     instances_sent: dict[str, int] = {spec: 0 for spec in trackers}
     instances_scored: dict[str, int] = {spec: 0 for spec in trackers}
 
-    def handle_scored_response(scored: ScoredResponse) -> None:
-        """Process a scored response and finalize task if complete."""
+    def check_task_completion(spec: str) -> None:
+        """Check if task is complete and finalize if so."""
         nonlocal tasks_complete
-        scored_responses[scored.spec][scored.instance_idx] = scored.scored
-        instances_scored[scored.spec] += 1
-
-        tracker = trackers[scored.spec]
+        tracker = trackers[spec]
         expected = tracker.total_instances - len(tracker.failed_instances)
 
-        # Check if all instances for this task are scored
-        if instances_scored[scored.spec] >= expected and scored.spec not in results:
-            # All instances scored - compute metrics
+        if instances_scored[spec] >= expected and spec not in results:
             responses_list = [
-                scored_responses[scored.spec][i]
-                for i in sorted(scored_responses[scored.spec].keys())
+                scored_responses[spec][i] for i in sorted(scored_responses[spec].keys())
             ]
             assert tracker.task is not None
             task_result = compute_task_metrics(
-                spec=scored.spec,
+                spec=spec,
                 task=tracker.task,
                 scored_responses=responses_list,
                 failed_instances=tracker.failed_instances,
                 total_instances=tracker.total_instances,
                 duration_seconds=time.time() - tracker.start_time,
             )
-            results[scored.spec] = task_result
+            results[spec] = task_result
             tasks_complete += 1
             _report_task_completion(model_name, task_result)
             if save_predictions and task_result.predictions:
@@ -105,11 +100,22 @@ async def process_results(
                     model_name, task_result.spec, task_result.predictions, task_hash
                 )
 
+    def handle_scored_response(scored: ScoredResponse) -> None:
+        """Process a scored response and check if task is complete."""
+        assert scored.scored is not None, "scored.scored should not be None for valid responses"
+        scored_responses[scored.spec][scored.instance_idx] = scored.scored
+        instances_scored[scored.spec] += 1
+        check_task_completion(scored.spec)
+
     def drain_scored_queue() -> None:
         """Non-blocking drain of scored responses."""
         while True:
             try:
                 scored: ScoredResponse = scored_queue.get_nowait()
+                # Check for fatal scorer error
+                if scored.spec == SCORER_FATAL:
+                    logger.error(f"FATAL: Scoring worker crashed! {scored.error}")
+                    raise RuntimeError(f"Scoring worker crashed: {scored.error}")
                 handle_scored_response(scored)
             except queue.Empty:
                 break
@@ -117,7 +123,7 @@ async def process_results(
     # Pre-add error tasks to results (these don't need scoring)
     for spec, tracker in trackers.items():
         if tracker.error:
-            task_result = finalize_task(tracker)
+            task_result = await finalize_task(tracker)
             results[spec] = task_result
             tasks_complete += 1
             _report_task_completion(model_name, task_result)
@@ -142,7 +148,7 @@ async def process_results(
             continue
 
         # Check for fatal worker crash
-        if result_item.task_id == WORKER_FATAL_TASK_ID:
+        if result_item.task_id == WORKER_FATAL:
             logger.error(f"FATAL: Worker crashed! {result_item.error}")
             raise RuntimeError(f"Worker process crashed: {result_item.error}")
 
@@ -152,13 +158,23 @@ async def process_results(
         if tracker.error:
             continue
 
-        if result_item.error:
+        # Check for hard failures (no outputs at all)
+        # Soft failures (error with outputs, like MaxTurnsExceeded) should still be scored
+        if result_item.error and not result_item.outputs:
             logger.warning(
                 f"Instance {result_item.instance_idx} failed for {result_item.task_id}: "
                 f"{result_item.error}"
             )
             tracker.add_failure(result_item.instance_idx, result_item.error)
+            check_task_completion(result_item.task_id)
             continue
+
+        if result_item.error:
+            # Soft error - log warning but continue to scoring
+            logger.debug(
+                f"Instance {result_item.instance_idx} completed with warning for "
+                f"{result_item.task_id}: {result_item.error}"
+            )
 
         # Build response and send to scoring immediately
         trajectory = None
@@ -193,10 +209,15 @@ async def process_results(
             scored: ScoredResponse = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: scored_queue.get(timeout=1.0)
             )
+            # Check for fatal scorer error
+            if scored.spec == SCORER_FATAL:
+                logger.error(f"FATAL: Scoring worker crashed! {scored.error}")
+                raise RuntimeError(f"Scoring worker crashed: {scored.error}")
             handle_scored_response(scored)
         except queue.Empty:
             continue
 
+    logger.info(f"Scoring complete ({total_tasks} tasks, {total_instances} instances)")
     return results
 
 
@@ -217,6 +238,7 @@ def aggregate_results(
     task_specs: list[str],
     provider_config: Any,
     attention_backend: str | None,
+    harness_config: Any | None = None,
 ) -> dict[str, Any]:
     """Aggregate results and prepare final output.
 
@@ -226,6 +248,7 @@ def aggregate_results(
         task_specs: Original task specs (may include suites).
         provider_config: Provider configuration.
         attention_backend: Attention backend used.
+        harness_config: Optional HarnessConfig for full config serialization.
 
     Returns:
         Results dictionary ready for serialization.
@@ -265,6 +288,9 @@ def aggregate_results(
     model_config_dict = provider_config.to_dict()
     model_config_dict["attention_backend"] = attention_backend
     results_dict["model_config"] = model_config_dict
+
+    if harness_config is not None:
+        results_dict["harness_config"] = harness_config.to_dict()
 
     suite_aggs = compute_suite_aggregations(task_specs, results_dict["tasks"])
     if suite_aggs:

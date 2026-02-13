@@ -12,7 +12,7 @@ from olmo_eval.common.logging import get_logger
 from olmo_eval.common.types import LMOutput, LMRequest, LogProbEntry, SamplingParams
 from olmo_eval.common.types.tools import ToolCall
 from olmo_eval.inference.base import InferenceProvider
-from olmo_eval.inference.retry import retry_with_backoff
+from olmo_eval.inference.tokenizer_utils import encode_context_and_continuation
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI
@@ -52,11 +52,9 @@ class VLLMServerProvider(InferenceProvider):
         self,
         model_name: str,
         base_url: str | None = None,
-        timeout: float = 30.0,
+        timeout: float = 60.0,
         max_concurrency: int = 32,
         max_retries: int = 3,
-        retry_delay: float = 1.0,
-        # Server config (only used if base_url is None)
         tensor_parallel_size: int = 1,
         max_model_len: int | None = None,
         tokenizer: str | None = None,
@@ -64,6 +62,7 @@ class VLLMServerProvider(InferenceProvider):
         tool_call_parser: str | None = None,
         trust_remote_code: bool = False,
         log_dir: str | None = None,
+        chat_template_kwargs: dict[str, Any] | None = None,
         **server_kwargs: Any,
     ) -> None:
         """Initialize the provider.
@@ -74,7 +73,6 @@ class VLLMServerProvider(InferenceProvider):
             timeout: Request timeout in seconds.
             max_concurrency: Maximum number of concurrent requests.
             max_retries: Maximum number of retries for transient errors.
-            retry_delay: Base delay in seconds between retries (exponential backoff).
             tensor_parallel_size: Number of GPUs for tensor parallelism (server mode).
             max_model_len: Maximum model context length (server mode).
             tokenizer: Tokenizer path override (server mode).
@@ -82,16 +80,19 @@ class VLLMServerProvider(InferenceProvider):
             tool_call_parser: Tool call parser name (server mode).
             trust_remote_code: Trust remote code for model loading (server mode).
             log_dir: Directory to write server logs to (server mode).
+            chat_template_kwargs: Extra kwargs for chat template (e.g., {"enable_thinking": false}).
             **server_kwargs: Additional vLLM server arguments.
         """
         super().__init__(model_name)
         self.timeout = timeout
         self.max_concurrency = max_concurrency
         self.max_retries = max_retries
-        self.retry_delay = retry_delay
+        self.chat_template_kwargs = chat_template_kwargs
+        self._tokenizer_path = tokenizer or model_name
         self._client: AsyncOpenAI | None = None
         self._http_client: httpx.AsyncClient | None = None
         self._openai_module: Any = None
+        self._tokenizer: Any = None
         self._server: VLLMServerProcess | None = None  # type: ignore[name-defined]
 
         if base_url:
@@ -113,6 +114,8 @@ class VLLMServerProvider(InferenceProvider):
                     srv_kwargs["tool_call_parser"] = tool_call_parser
             if trust_remote_code:
                 srv_kwargs["trust_remote_code"] = True
+            if chat_template_kwargs:
+                srv_kwargs["chat_template_kwargs"] = chat_template_kwargs
 
             self._server = VLLMServerProcess(
                 model_name=model_name,
@@ -142,12 +145,10 @@ class VLLMServerProvider(InferenceProvider):
             self._openai_module = openai
 
             # Configure connection pool limits to prevent exhaustion with large batches.
-            # Default httpx settings (100 connections) can cause issues when processing
-            # thousands of instances with agent loops making multiple API calls each.
             limits = httpx.Limits(
                 max_keepalive_connections=20,
-                max_connections=50,
-                keepalive_expiry=30.0,  # Close idle connections after 30s
+                max_connections=100,
+                keepalive_expiry=60.0,  # Close idle connections after 120s
             )
 
             # Build event hooks for debug logging if enabled
@@ -167,7 +168,7 @@ class VLLMServerProvider(InferenceProvider):
             self._client = AsyncOpenAI(
                 base_url=self.base_url,
                 timeout=self.timeout,
-                max_retries=0,  # Disable SDK retries - we handle them ourselves
+                max_retries=self.max_retries,
                 http_client=self._http_client,
             )
         return self._client
@@ -184,6 +185,14 @@ class VLLMServerProvider(InferenceProvider):
     def get_openai_client(self) -> AsyncOpenAI:
         """Get the AsyncOpenAI client for this provider."""
         return self._get_or_create_client()
+
+    def _get_tokenizer(self) -> Any:
+        """Get or create the tokenizer for logprobs computation."""
+        if self._tokenizer is None:
+            from transformers import AutoTokenizer
+
+            self._tokenizer = AutoTokenizer.from_pretrained(self._tokenizer_path)
+        return self._tokenizer
 
     async def _generate_single_impl(
         self, request: LMRequest, params: SamplingParams
@@ -217,6 +226,12 @@ class VLLMServerProvider(InferenceProvider):
             kwargs["stop"] = list(params.stop_sequences)[:4]
         if tools:
             kwargs["tools"] = tools
+        # Always request logprobs for metrics computation
+        kwargs["logprobs"] = True
+
+        # Pass chat_template_kwargs via extra_body for vLLM
+        if self.chat_template_kwargs:
+            kwargs["extra_body"] = {"chat_template_kwargs": self.chat_template_kwargs}
 
         response = await client.chat.completions.create(**kwargs)
 
@@ -233,7 +248,34 @@ class VLLMServerProvider(InferenceProvider):
                     )
                     for tc in choice.message.tool_calls
                 ]
-            outputs.append(LMOutput(text=text, tool_calls=tool_calls))
+
+            # Convert logprobs to standard format
+            logprob_entries: list[LogProbEntry] | None = None
+            metadata: dict[str, Any] = {}
+            logprobs_data = getattr(choice, "logprobs", None)
+            if logprobs_data and hasattr(logprobs_data, "content") and logprobs_data.content:
+                logprob_entries = []
+                for lp in logprobs_data.content:
+                    entry: LogProbEntry = {"token": lp.token, "logprob": lp.logprob}
+                    lp_bytes = getattr(lp, "bytes", None)
+                    if lp_bytes is not None:
+                        entry["bytes"] = lp_bytes
+                    logprob_entries.append(entry)
+
+                # Compute metadata from logprobs
+                sum_logits = sum(entry["logprob"] for entry in logprob_entries)
+                num_tokens = len(logprob_entries)
+                metadata = {
+                    "sum_logits": sum_logits,
+                    "num_tokens": num_tokens,
+                    "num_tokens_all": num_tokens,
+                }
+
+            outputs.append(
+                LMOutput(
+                    text=text, logprobs=logprob_entries, metadata=metadata, tool_calls=tool_calls
+                )
+            )
 
         return outputs
 
@@ -241,13 +283,7 @@ class VLLMServerProvider(InferenceProvider):
         self, request: LMRequest, params: SamplingParams
     ) -> list[LMOutput]:
         """Generate completions for a single request."""
-        return await retry_with_backoff(
-            lambda: self._generate_single_impl(request, params),
-            max_retries=self.max_retries,
-            retry_delay=self.retry_delay,
-            context=f"generate model={self.model_name}",
-            sdk_module=self._openai_module,
-        )
+        return await self._generate_single_impl(request, params)
 
     async def agenerate(
         self,
@@ -294,44 +330,75 @@ class VLLMServerProvider(InferenceProvider):
         return asyncio.run(self.agenerate(requests, sampling_params))
 
     async def _logprobs_single_impl(self, request: LMRequest) -> list[LMOutput]:
-        """Compute logprobs for a single request."""
+        """Compute logprobs for continuations.
+
+        Uses the completions endpoint with prompt_logprobs to get the actual
+        logprob of each continuation token given the context.
+        """
         client = self._get_or_create_client()
+        tokenizer = self._get_tokenizer()
 
+        # Get the context/prompt text
+        context = request.prompt
         if request.messages:
-            content = request.messages[0].get("content", "") if request.messages else ""
-        else:
-            content = request.prompt
-
-        response = await client.chat.completions.create(
-            model=self.model_name,
-            messages=[{"role": "user", "content": content}],
-            max_tokens=50,
-            temperature=0.0,
-            logprobs=True,
-        )
-
-        completion_logprobs: list[LogProbEntry] = []
-        if response.choices:
-            choice = response.choices[0]
-            logprobs_data = getattr(choice, "logprobs", None)
-            if logprobs_data and hasattr(logprobs_data, "content") and logprobs_data.content:
-                for lp in logprobs_data.content:
-                    entry: LogProbEntry = {"token": lp.token, "logprob": lp.logprob}
-                    lp_bytes = getattr(lp, "bytes", None)
-                    if lp_bytes is not None:
-                        entry["bytes"] = lp_bytes
-                    completion_logprobs.append(entry)
+            context = request.messages[0].get("content", "") if request.messages else ""
 
         outputs = []
         for continuation in request.continuations or ():
-            total = (
-                sum(lp["logprob"] for lp in completion_logprobs[:5]) if completion_logprobs else 0.0
+            # Use shared utility for proper tokenization (handles BOS, trailing spaces)
+            context_enc, continuation_enc = encode_context_and_continuation(
+                tokenizer, context, continuation
             )
+            context_len = len(context_enc)
+
+            # Build full token sequence and convert back to text for API
+            full_tokens = context_enc + continuation_enc
+            full_prompt = tokenizer.decode(full_tokens)
+
+            # Use completions endpoint with prompt_logprobs
+            response = await client.completions.create(
+                model=self.model_name,
+                prompt=full_prompt,
+                max_tokens=0,  # Don't generate, just get prompt logprobs
+                temperature=0.0,
+                extra_body={"prompt_logprobs": 5},
+            )
+
+            # Extract logprobs for continuation tokens only
+            logprob_entries: list[LogProbEntry] = []
+            total = 0.0
+
+            if response.choices:
+                choice = response.choices[0]
+                prompt_logprobs = getattr(choice, "prompt_logprobs", None) or []
+
+                # Skip context tokens, get continuation logprobs
+                cont_logprobs = prompt_logprobs[context_len:]
+
+                for token_id, token_probs in zip(continuation_enc, cont_logprobs, strict=False):
+                    if not token_probs:
+                        continue
+
+                    # Look up logprob for the actual continuation token
+                    lp_info = token_probs.get(token_id)
+                    if lp_info is None:
+                        continue
+
+                    if isinstance(lp_info, dict):
+                        token_str = lp_info.get("token", tokenizer.decode([token_id]))
+                        logprob = lp_info.get("logprob", 0.0)
+                    else:
+                        token_str = getattr(lp_info, "token", tokenizer.decode([token_id]))
+                        logprob = getattr(lp_info, "logprob", 0.0)
+
+                    logprob_entries.append({"token": token_str, "logprob": logprob})
+                    total += logprob
+
             outputs.append(
                 LMOutput(
                     text=continuation,
-                    logprobs=completion_logprobs[:5] if completion_logprobs else None,
-                    metadata={"total_logprob": total},
+                    logprobs=logprob_entries if logprob_entries else None,
+                    metadata={"total_logprob": total, "num_tokens": len(logprob_entries)},
                 )
             )
 
@@ -339,13 +406,7 @@ class VLLMServerProvider(InferenceProvider):
 
     async def _logprobs_single_async(self, request: LMRequest) -> list[LMOutput]:
         """Compute logprobs for a single request."""
-        return await retry_with_backoff(
-            lambda: self._logprobs_single_impl(request),
-            max_retries=self.max_retries,
-            retry_delay=self.retry_delay,
-            context=f"logprobs model={self.model_name}",
-            sdk_module=self._openai_module,
-        )
+        return await self._logprobs_single_impl(request)
 
     async def alogprobs(self, requests: list[LMRequest]) -> list[list[LMOutput]]:
         """Async compute logprobs for continuations.

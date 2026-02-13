@@ -10,6 +10,7 @@ from olmo_eval.inference.providers.config import ProviderConfig
 if TYPE_CHECKING:
     from olmo_eval.common.types import ToolSchema
 
+    from .sandbox import SandboxConfig
     from .tools import Tool
 
 
@@ -23,6 +24,7 @@ class HarnessConfig:
     - System prompt to prepend to requests
     - Tool choice behavior (auto, none, required)
     - Backend selection (default, openai_agents)
+    - Sandbox configurations for isolated tool execution
     """
 
     name: str
@@ -34,6 +36,8 @@ class HarnessConfig:
     required_secrets: tuple[str, ...] = ()
     max_turns: int | None = None
     max_concurrency: int | None = None
+    scoring_concurrency: int | None = None
+    sandboxes: tuple[SandboxConfig, ...] = ()
 
     # Cache for resolved tools
     _resolved_tools_cache: tuple[Tool, ...] | None = field(
@@ -79,6 +83,15 @@ class HarnessConfig:
         """
         return len(self.tools) > 0
 
+    @property
+    def has_sandbox_tools(self) -> bool:
+        """Check if any configured tools require sandbox execution.
+
+        Returns:
+            True if at least one tool has non-empty capabilities.
+        """
+        return any(t.sandbox for t in self.resolved_tools)
+
     def validate_secrets(self) -> list[str]:
         """Check that all required secrets are available.
 
@@ -112,6 +125,10 @@ class HarnessConfig:
             d["max_turns"] = self.max_turns
         if self.max_concurrency is not None:
             d["max_concurrency"] = self.max_concurrency
+        if self.scoring_concurrency is not None:
+            d["scoring_concurrency"] = self.scoring_concurrency
+        if self.sandboxes:
+            d["sandboxes"] = [s.to_dict() for s in self.sandboxes]
         return d
 
     @classmethod
@@ -124,11 +141,15 @@ class HarnessConfig:
         Returns:
             A new HarnessConfig instance.
         """
+        from .sandbox import SandboxConfig
+
         provider_data = data.get("provider", {})
+        sandboxes_data = data.get("sandboxes", [])
+        sandboxes = tuple(SandboxConfig.from_dict(s) for s in sandboxes_data)
+
         return cls(
             name=data.get("name", "default"),
             provider=ProviderConfig.from_dict(provider_data),
-            # Tool configuration (serialized as "tool_names" for backward compat)
             tools=tuple(data.get("tool_names", [])),
             system_prompt=data.get("system_prompt"),
             tool_choice=data.get("tool_choice", "auto"),
@@ -136,6 +157,8 @@ class HarnessConfig:
             required_secrets=tuple(data.get("required_secrets", [])),
             max_turns=data.get("max_turns"),
             max_concurrency=data.get("max_concurrency"),
+            scoring_concurrency=data.get("scoring_concurrency"),
+            sandboxes=sandboxes,
         )
 
     def with_tools(self, *new_tools: Tool | str) -> HarnessConfig:
@@ -157,6 +180,8 @@ class HarnessConfig:
             required_secrets=self.required_secrets,
             max_turns=self.max_turns,
             max_concurrency=self.max_concurrency,
+            scoring_concurrency=self.scoring_concurrency,
+            sandboxes=self.sandboxes,
         )
 
     def with_system_prompt(self, system_prompt: str) -> HarnessConfig:
@@ -178,6 +203,8 @@ class HarnessConfig:
             required_secrets=self.required_secrets,
             max_turns=self.max_turns,
             max_concurrency=self.max_concurrency,
+            scoring_concurrency=self.scoring_concurrency,
+            sandboxes=self.sandboxes,
         )
 
     def with_provider(self, provider: ProviderConfig) -> HarnessConfig:
@@ -199,6 +226,8 @@ class HarnessConfig:
             required_secrets=self.required_secrets,
             max_turns=self.max_turns,
             max_concurrency=self.max_concurrency,
+            scoring_concurrency=self.scoring_concurrency,
+            sandboxes=self.sandboxes,
         )
 
     def merge_provider(self, provider: ProviderConfig) -> HarnessConfig:
@@ -262,6 +291,8 @@ def harness_config(
     required_secrets: Sequence[str] = (),
     max_turns: int | None = None,
     max_concurrency: int | None = None,
+    scoring_concurrency: int | None = None,
+    sandboxes: Sequence[SandboxConfig] = (),
 ) -> HarnessConfig:
     """Create a HarnessConfig.
 
@@ -275,6 +306,8 @@ def harness_config(
         required_secrets: Environment variable names for tools.
         max_turns: Maximum turns for agent backends (None = backend default).
         max_concurrency: Maximum concurrent tool executions for agent backends.
+        scoring_concurrency: Maximum concurrent scoring operations (default 8).
+        sandboxes: Sandbox configurations for isolated tool execution.
 
     Returns:
         A new HarnessConfig instance.
@@ -289,4 +322,6 @@ def harness_config(
         required_secrets=tuple(required_secrets),
         max_turns=max_turns,
         max_concurrency=max_concurrency,
+        scoring_concurrency=scoring_concurrency,
+        sandboxes=tuple(sandboxes),
     )

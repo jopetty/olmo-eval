@@ -269,9 +269,10 @@ config = HarnessConfig(
 
 Backends define how the Harness executes multi-turn requests with tool calling. The backend handles the agentic loop: calling the model, executing tools, and feeding results back.
 
-| Backend | Description | Required Extra |
-|---------|-------------|----------------|
-| `openai_agents` | Uses the [OpenAI Agents SDK](https://github.com/openai/openai-agents-python) for execution | `agents` |
+```bash
+# List available backends
+olmo-eval backends
+```
 
 **When to use a backend:**
 - For multi-turn execution with `harness.run()`, you must specify a backend
@@ -739,6 +740,7 @@ cluster: h100
 | `--group` | `-g` | none | Add experiments to Beaker group(s) (can specify multiple) |
 | `--dry-run` | `-d` | `false` | Print spec without launching |
 | `--follow/--no-follow` | | `true` | Follow logs after launch |
+| `--secret-env` | | none | Map Beaker secret to env var (can specify multiple) |
 
 ### Per-Model and Per-Task Overrides
 
@@ -781,6 +783,29 @@ The `-o` flag uses OmegaConf dotlist syntax, supporting:
 # Good - single quotes protect the value
 -o 'extra_config={key: value, nested: {a: 1}}'
 ```
+
+### Secret Environment Overrides
+
+By default, Beaker secrets are mapped using the pattern `{username}_{ENV_VAR}` (e.g., `ai2-tylerm_OPENAI_API_KEY`).
+Use `--secret-env` to override this with a custom Beaker secret name:
+
+```bash
+# Use a team-shared secret instead of your personal secret
+olmo-eval beaker launch -n "eval" -m gpt-4o -t mmlu \
+    --secret-env team-openai-key:OPENAI_API_KEY
+
+# Multiple secret overrides
+olmo-eval beaker launch -n "eval" -m gpt-4o -t simpleqa \
+    --secret-env team-openai-key:OPENAI_API_KEY \
+    --secret-env shared-serper-key:SERPER_API_KEY
+```
+
+Format: `BEAKER_SECRET_NAME:ENV_VAR_NAME`
+
+This is useful for:
+- Using team-shared API keys instead of personal secrets
+- Testing with different credential sets
+- Sharing jobs that use organization-level secrets
 
 ### YAML Configuration
 
@@ -918,14 +943,10 @@ See `examples/beaker/configs/` for more configuration examples.
 
 ### Cluster Aliases
 
-| Alias | Clusters |
-|-------|----------|
-| `h100` | ai2/jupiter, ai2/ceres |
-| `a100` | ai2/saturn |
-| `l40` | ai2/neptune |
-| `aus` | ai2/jupiter, ai2/neptune, ai2/saturn, ai2/ceres |
-| `aus80g` | ai2/jupiter, ai2/saturn, ai2/ceres |
-| `80g` | ai2/jupiter, ai2/saturn, ai2/ceres |
+```bash
+# List available cluster aliases
+olmo-eval beaker clusters
+```
 
 ### Programmatic API
 

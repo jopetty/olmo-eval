@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
@@ -22,6 +23,7 @@ from olmo_eval.common.types import (
 )
 
 if TYPE_CHECKING:
+    from olmo_eval.common.execution import ScoringContext
     from olmo_eval.data import DataSource
 
 
@@ -361,15 +363,46 @@ class Task(ABC):
         """Get data source for a specific split."""
         return self.config.get_data_source(split=split)
 
-    def score_responses(self, responses: Sequence[Response]) -> Sequence[Response]:
+    async def score_responses(
+        self,
+        responses: Sequence[Response],
+        context: ScoringContext | None = None,
+    ) -> Sequence[Response]:
         """Apply all scorers to extract answers and compute scores.
+
+        Args:
+            responses: Responses to score.
+            context: Optional scoring context with execution environment for
+                scorers that need sandboxed execution.
+
+        Returns:
+            The scored responses.
 
         Subclasses needing custom answer extraction should override
         `_extract_answers()` rather than this method.
         """
         self._extract_answers(responses)
-        self._apply_scorers(responses)
+
+        # Check if any scorers need async execution
+        has_async_scorers = self._has_async_scorers()
+
+        if has_async_scorers and context is not None:
+            # Run async scoring
+            await self._apply_scorers_async(responses, context)
+        else:
+            # Run sync scoring
+            self._apply_scorers(responses)
+
         return responses
+
+    def _has_async_scorers(self) -> bool:
+        """Check if any configured scorers require async execution."""
+        for metric in self.config.metrics:
+            if hasattr(metric, "scorer") and metric.scorer is not None:
+                scorer_instance = metric.scorer()
+                if getattr(scorer_instance, "requires_async", False):
+                    return True
+        return False
 
     def _extract_answers(self, responses: Sequence[Response]) -> None:
         """Extract answers from outputs. Override for custom extraction logic."""
@@ -378,7 +411,7 @@ class Task(ABC):
                 output.extracted_answer = self.extract_answer(output)
 
     def _apply_scorers(self, responses: Sequence[Response]) -> None:
-        """Run all scorers and populate response.scores."""
+        """Run all scorers synchronously and populate response.scores."""
         # Collect scorers from metrics, avoiding duplicates by name
         scorers_by_name: dict[str, Scorer] = {}
         for metric in self.config.metrics:
@@ -392,6 +425,98 @@ class Task(ABC):
             for scorer in scorers_by_name.values():
                 scores = [scorer.score(response.instance, o) for o in response.outputs]
                 response.scores[scorer.name] = max(scores) if scores else 0.0
+
+    async def _apply_scorers_async(
+        self,
+        responses: Sequence[Response],
+        context: ScoringContext,
+        max_concurrency: int = 8,
+    ) -> None:
+        """Run all scorers with context and populate response.scores.
+
+        ExecutionScorer subclasses are scored via ascore() with the execution
+        environment concurrently. Regular scorers use score() synchronously.
+
+        Args:
+            responses: Responses to score.
+            context: Scoring context with execution environment.
+            max_concurrency: Maximum concurrent async scoring operations.
+
+        Raises:
+            SandboxRequiredError: If an ExecutionScorer is used without a valid
+                execution environment in the context.
+        """
+        from olmo_eval.common.scorers.execution import ExecutionScorer, SandboxRequiredError
+
+        # Validate execution environment for execution scorers
+        execution_env = context.execution_env if context.has_execution_env else None
+
+        # Collect scorers from metrics, avoiding duplicates by name
+        scorers_by_name: dict[str, Scorer] = {}
+        for metric in self.config.metrics:
+            if hasattr(metric, "scorer") and metric.scorer is not None:
+                scorer_instance = metric.scorer()
+                if scorer_instance.name not in scorers_by_name:
+                    scorers_by_name[scorer_instance.name] = scorer_instance
+
+        # Separate execution scorers (async) from regular scorers (sync)
+        execution_scorers: dict[str, ExecutionScorer] = {}
+        sync_scorers: dict[str, Scorer] = {}
+        for name, scorer in scorers_by_name.items():
+            if isinstance(scorer, ExecutionScorer):
+                if execution_env is None:
+                    raise SandboxRequiredError(
+                        f"{scorer.__class__.__name__} requires a sandbox. "
+                        "Configure sandboxes in HarnessConfig."
+                    )
+                execution_scorers[name] = scorer
+            else:
+                sync_scorers[name] = scorer
+
+        # Apply sync scorers first (fast, no concurrency needed)
+        for response in responses:
+            for scorer in sync_scorers.values():
+                scores = [scorer.score(response.instance, o) for o in response.outputs]
+                response.scores[scorer.name] = max(scores) if scores else 0.0
+
+        # Apply execution scorers concurrently
+        if execution_scorers and execution_env is not None:
+            semaphore = asyncio.Semaphore(max_concurrency)
+
+            # Build list of async scoring tasks
+            # Each task is (response_idx, scorer_name, output_idx, coroutine)
+            async def score_one(
+                resp_idx: int, scorer: ExecutionScorer, out_idx: int
+            ) -> tuple[int, str, int, float]:
+                async with semaphore:
+                    response = responses[resp_idx]
+                    output = response.outputs[out_idx]
+                    score = await scorer.ascore(response.instance, output, execution_env)
+                    return (resp_idx, scorer.name, out_idx, score)
+
+            tasks = []
+            for resp_idx, response in enumerate(responses):
+                for scorer in execution_scorers.values():
+                    for out_idx in range(len(response.outputs)):
+                        tasks.append(score_one(resp_idx, scorer, out_idx))
+
+            # Run all scoring tasks concurrently
+            results = await asyncio.gather(*tasks)
+
+            # Aggregate results: for each (response, scorer), take max across outputs
+            # Structure: {resp_idx: {scorer_name: [scores]}}
+            scores_by_response: dict[int, dict[str, list[float]]] = {}
+            for resp_idx, scorer_name, _, score in results:
+                if resp_idx not in scores_by_response:
+                    scores_by_response[resp_idx] = {}
+                if scorer_name not in scores_by_response[resp_idx]:
+                    scores_by_response[resp_idx][scorer_name] = []
+                scores_by_response[resp_idx][scorer_name].append(score)
+
+            # Assign max scores to responses
+            for resp_idx, scorer_scores in scores_by_response.items():
+                for scorer_name, scores in scorer_scores.items():
+                    responses[resp_idx].scores[scorer_name] = max(scores) if scores else 0.0
 
     def compute_metrics(self, responses: Sequence[Response]) -> dict[str, dict[str, float]]:
         """Compute all metrics from scored responses.

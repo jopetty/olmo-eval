@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import warnings
 from typing import Literal
 
@@ -9,6 +10,52 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR"]
 
 # Package-wide logger
 PACKAGE_LOGGER_NAME = "olmo_eval"
+
+# ANSI color codes for terminal output
+_COLORS = (
+    "\033[36m",  # Cyan
+    "\033[33m",  # Yellow
+    "\033[35m",  # Magenta
+    "\033[32m",  # Green
+    "\033[34m",  # Blue
+    "\033[91m",  # Light Red
+    "\033[96m",  # Light Cyan
+    "\033[93m",  # Light Yellow
+    "\033[95m",  # Light Magenta
+    "\033[92m",  # Light Green
+    "\033[94m",  # Light Blue
+)
+_RESET = "\033[0m"
+
+
+def _get_color_for_owner(owner: str) -> str:
+    """Get a consistent color for an owner string based on its hash."""
+    return _COLORS[hash(owner) % len(_COLORS)]
+
+
+# Pattern to match [owner] at the start of a message
+_OWNER_PATTERN = re.compile(r"^(\[[\w.-]+\])")
+
+
+def _color_owner_in_message(message: str) -> str:
+    """Color any [owner] pattern at the start of a log message."""
+    match = _OWNER_PATTERN.match(message)
+    if match:
+        owner_tag = match.group(1)
+        owner = owner_tag[1:-1]  # Remove brackets
+        color = _get_color_for_owner(owner)
+        return f"{color}{owner_tag}{_RESET}{message[match.end() :]}"
+    return message
+
+
+class OwnerColoringFormatter(logging.Formatter):
+    """Formatter that colors [owner] patterns in log messages."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        # Color any [owner] pattern in the message
+        record.msg = _color_owner_in_message(str(record.msg))
+        return super().format(record)
+
 
 # Suppress noisy third-party library output BEFORE they are imported.
 # These must be set at module load time to take effect.
@@ -65,20 +112,30 @@ def configure_logging(level: LogLevel = "INFO") -> None:
 
     Set OLMO_EVAL_DEBUG=1 to bypass all log silencing and warning filters.
     """
+    root_logger = logging.getLogger()
+
     # In debug mode, use DEBUG level and don't silence anything
     if _is_debug_mode():
-        logging.basicConfig(
-            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-            level=logging.DEBUG,
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            OwnerColoringFormatter(
+                "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
         )
+        root_logger.addHandler(handler)
+        root_logger.setLevel(logging.DEBUG)
         return
 
-    logging.basicConfig(
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        level=getattr(logging, level),
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        OwnerColoringFormatter(
+            "%(asctime)s [%(levelname)s] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
     )
+    root_logger.addHandler(handler)
+    root_logger.setLevel(getattr(logging, level))
 
     # Suppress noisy third-party loggers
     logging.getLogger("datasets").setLevel(logging.ERROR)
@@ -87,6 +144,9 @@ def configure_logging(level: LogLevel = "INFO") -> None:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     logging.getLogger("LiteLLM").setLevel(logging.WARNING)
     logging.getLogger("litellm").setLevel(logging.WARNING)
+
+    # Allow swerex (sandbox) logs through at DEBUG level
+    logging.getLogger("swerex").setLevel(logging.DEBUG)
 
     # Set environment variables for third-party libraries
     os.environ.setdefault("HF_DATASETS_DISABLE_PROGRESS_BAR", "1")
@@ -118,9 +178,11 @@ def configure_worker_logging(worker_id: str) -> logging.Logger:
 
     if not logger.handlers:
         handler = FlushingStreamHandler()
+        color = _get_color_for_owner(worker_id)
+        colored_id = f"{color}[{worker_id}]{_RESET}"
         handler.setFormatter(
             logging.Formatter(
-                f"%(asctime)s [{worker_id}] [%(levelname)s] %(message)s",
+                f"%(asctime)s [%(levelname)s] {colored_id} %(message)s",
                 datefmt="%Y-%m-%d %H:%M:%S",
             )
         )

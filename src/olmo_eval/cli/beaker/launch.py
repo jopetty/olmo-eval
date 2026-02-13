@@ -182,6 +182,7 @@ from olmo_eval.common.constants.infrastructure import BEAKER_RESULT_DIR, BEAKER_
     help="Print the first request of each task before model generation",
 )
 @click.option(
+    "-H",
     "--harness",
     type=str,
     default=None,
@@ -192,6 +193,11 @@ from olmo_eval.common.constants.infrastructure import BEAKER_RESULT_DIR, BEAKER_
     default=BEAKER_UV_CACHE_DIR,
     show_default=True,
     help="UV cache directory for package downloads (on Weka shared storage)",
+)
+@click.option(
+    "--secret-env",
+    multiple=True,
+    help="Map Beaker secret to env var: BEAKER_SECRET:ENV_VAR (e.g., my-openai-key:OPENAI_API_KEY)",
 )
 def launch(
     config: str | None,
@@ -231,6 +237,7 @@ def launch(
     inspect_request: bool,
     harness: str | None,
     uv_cache_dir: str,
+    secret_env: tuple[str, ...],
 ) -> None:
     """Launch an evaluation job on Beaker.
 
@@ -255,7 +262,10 @@ def launch(
     from olmo_eval.cli.beaker.experiment_builder import ExperimentPlanBuilder
     from olmo_eval.cli.beaker.job_assembler import JobConfigAssembler
     from olmo_eval.cli.beaker.task_validator import TaskValidator
-    from olmo_eval.common.constants.infrastructure import BEAKER_DEFAULT_IMAGE
+    from olmo_eval.common.constants.infrastructure import (
+        BEAKER_DEFAULT_IMAGE,
+        BEAKER_SANDBOX_IMAGE,
+    )
 
     ordered_args = reconstruct_ordered_args(sys.argv[1:])
     raw_task_overrides, harness_overrides = process_ordered_args(ordered_args)
@@ -271,6 +281,18 @@ def launch(
         inspect_tokens = True
         inspect_response = True
         inspect_request = True
+
+    # Parse secret_env mappings: BEAKER_SECRET:ENV_VAR -> {beaker_secret: env_var}
+    secret_env_overrides: dict[str, str] = {}
+    for mapping in secret_env:
+        if ":" not in mapping:
+            console.print(
+                f"[red]Error:[/red] Invalid --secret-env format '{mapping}'. "
+                "Expected BEAKER_SECRET:ENV_VAR"
+            )
+            raise SystemExit(1)
+        beaker_secret, env_var = mapping.split(":", 1)
+        secret_env_overrides[beaker_secret] = env_var
 
     # Build CLI args dict
     cli_args = {
@@ -305,6 +327,7 @@ def launch(
         "harness": harness,
         "harness_overrides": harness_overrides,
         "uv_cache_dir": uv_cache_dir,
+        "secret_env_overrides": secret_env_overrides,
     }
 
     # Load configuration
@@ -364,10 +387,26 @@ def launch(
     )
 
     # Determine effective image
+    # Check if harness has a sandbox configured with local deployment - if so, use sandbox image
+    # Apply harness overrides first so -o sandbox.mode=docker works correctly
+    harness_needs_sandbox = False
+    if launch_config.harness:
+        from olmo_eval.harness import get_harness_preset
+
+        harness_preset = get_harness_preset(launch_config.harness)
+        if launch_config.harness_overrides:
+            harness_preset = _apply_harness_overrides(
+                harness_preset, launch_config.harness_overrides
+            )
+        if harness_preset.sandboxes:
+            harness_needs_sandbox = any(s.is_local for s in harness_preset.sandboxes)
+
     if image:
         effective_image = image
     elif eval_config and eval_config.beaker_image:
         effective_image = eval_config.beaker_image
+    elif harness_needs_sandbox:
+        effective_image = BEAKER_SANDBOX_IMAGE
     else:
         effective_image = BEAKER_DEFAULT_IMAGE
 
@@ -403,6 +442,10 @@ def launch(
         harness_config = get_harness_preset(launch_config.harness)
         if harness_config.required_secrets:
             all_required_secrets.update(harness_config.required_secrets)
+        # Collect sandbox-required secrets
+        for sandbox in harness_config.sandboxes:
+            if sandbox.required_secrets:
+                all_required_secrets.update(sandbox.required_secrets)
 
     # Ensure secrets
     common_secrets, store_secrets, task_secrets = _ensure_secrets(
@@ -439,6 +482,8 @@ def launch(
         task_secrets,
         inject_aws,
         inject_gcs,
+        enable_sandbox=harness_needs_sandbox,
+        secret_env_overrides=launch_config.secret_env_overrides,
     )
 
     job_configs = []
@@ -449,7 +494,11 @@ def launch(
         job_configs.append(job_config)
 
         exp_summary = _build_experiment_summary(
-            exp, job_config, task_configs_by_spec, launch_config.harness
+            exp,
+            job_config,
+            task_configs_by_spec,
+            launch_config.harness,
+            launch_config.harness_overrides,
         )
         experiment_summaries.append(exp_summary)
 
@@ -654,6 +703,7 @@ def _build_experiment_summary(
     job_config,
     task_configs_by_spec: dict,
     harness: str | None = None,
+    harness_overrides: list[str] | None = None,
 ) -> ExperimentSummary:
     """Build experiment summary for display."""
     from olmo_eval.runners import AsyncEvalRunner
@@ -675,6 +725,8 @@ def _build_experiment_summary(
     from olmo_eval.harness import get_harness_preset
 
     harness_config = get_harness_preset(harness or "default")
+    if harness_overrides:
+        harness_config = _apply_harness_overrides(harness_config, harness_overrides)
     provider_config = get_provider_config(exp.model_spec)
     harness_config = harness_config.merge_provider(provider_config)
 
@@ -708,3 +760,25 @@ def _handle_follow(launcher, launched_experiments: list[str], follow: bool) -> N
             for exp_id in launched_experiments:
                 url = launcher.get_experiment_url(exp_id)
                 console.print(f"  - {url}")
+
+
+def _apply_harness_overrides(harness_config, overrides: list[str]):
+    """Apply CLI overrides to harness config.
+
+    Args:
+        harness_config: Base HarnessConfig to modify.
+        overrides: List of dotlist override strings (e.g., ["sandbox.mode=docker"]).
+
+    Returns:
+        New HarnessConfig with overrides applied.
+    """
+    from omegaconf import OmegaConf
+
+    from olmo_eval.harness import HarnessConfig
+
+    harness_dict = harness_config.to_dict()
+    override_config = OmegaConf.from_dotlist(overrides)
+    base = OmegaConf.create(harness_dict)
+    merged = OmegaConf.merge(base, override_config)
+    harness_dict = OmegaConf.to_container(merged, resolve=True)
+    return HarnessConfig.from_dict(harness_dict)  # type: ignore[arg-type]

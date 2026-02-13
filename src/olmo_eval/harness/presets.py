@@ -1,122 +1,196 @@
 """Pre-built harness configurations.
 
-Presets are registered using the @harness_preset decorator.
+Presets are accessed via `HarnessPresets.name` or `get_harness_preset("name")`.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
+from typing import Any
 
+from olmo_eval.common.constants import BEAKER_RESULT_DIR, LOCAL_RESULT_DIR
 from olmo_eval.common.types import ProviderKind
+from olmo_eval.harness.sandbox import Capability
 
 from .config import HarnessConfig, ProviderConfig
-from .constants import DR_TULU_SYSTEM_PROMPT
+from .constants import (
+    CODE_COMPLETION_SYSTEM_PROMPT,
+    CODING_AGENT_SYSTEM_PROMPT,
+    DR_TULU_SYSTEM_PROMPT,
+)
+
+
+def _get_logs_dir() -> str:
+    """Get the logs directory based on environment."""
+    result_dir = BEAKER_RESULT_DIR if os.environ.get("BEAKER_JOB_ID") else LOCAL_RESULT_DIR
+    return os.path.join(result_dir, "logs")
+
 
 # ─────────────────────────────────────────────────────────
-# Registry
+# Lazy Descriptor
 # ─────────────────────────────────────────────────────────
 
-# Maps preset name -> either a HarnessConfig or a factory that produces one
-_PRESET_REGISTRY: dict[str, HarnessConfig | Callable[[], HarnessConfig]] = {}
+
+class _Lazy:
+    """Descriptor for lazily-loaded presets with auto-injected name."""
+
+    def __init__(self, factory: Callable[[str], HarnessConfig]):
+        self._factory = factory
+        self._cached: HarnessConfig | None = None
+        self._name: str = ""
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        self._name = name
+
+    def __get__(self, obj: Any, objtype: type | None = None) -> HarnessConfig:
+        if self._cached is None:
+            self._cached = self._factory(self._name)
+        return self._cached
 
 
-def harness_preset(
-    name: str,
-) -> Callable[[Callable[[], HarnessConfig]], Callable[[], HarnessConfig]]:
-    """Decorator to register a harness preset factory.
-
-    The decorated function is called lazily on first access, allowing
-    presets to defer heavy imports (like tool modules).
-
-    Args:
-        name: Name to register the preset under.
-
-    Returns:
-        Decorator that registers the factory function.
-    """
-
-    def decorator(fn: Callable[[], HarnessConfig]) -> Callable[[], HarnessConfig]:
-        _PRESET_REGISTRY[name] = fn
-        return fn
-
-    return decorator
-
-
-def register_harness_preset(name: str, config: HarnessConfig) -> None:
-    """Register a harness preset directly (non-lazy).
-
-    Args:
-        name: Name to register the preset under.
-        config: HarnessConfig to register.
-    """
-    _PRESET_REGISTRY[name] = config
-
-
-def get_harness_preset(name: str) -> HarnessConfig:
-    """Get a harness preset by name.
-
-    Available presets:
-    - "default": No tools, standard model behavior
-    - "search": Web and academic search tools for factual QA
-
-    Args:
-        name: Name of the preset to retrieve.
-
-    Returns:
-        HarnessConfig for the requested preset.
-
-    Raises:
-        ValueError: If the preset name is unknown.
-    """
-    if name not in _PRESET_REGISTRY:
-        available = ", ".join(sorted(_PRESET_REGISTRY.keys()))
-        raise ValueError(f"Unknown harness preset: '{name}'. Available: {available}")
-
-    entry = _PRESET_REGISTRY[name]
-    if callable(entry):
-        # Lazy initialization: call factory and cache result
-        config = entry()
-        _PRESET_REGISTRY[name] = config
-        return config
-    return entry
-
-
-def list_harness_presets() -> list[str]:
-    """List all available harness preset names.
-
-    Returns:
-        Sorted list of preset names.
-    """
-    return sorted(_PRESET_REGISTRY.keys())
+def lazy(fn: Callable[[str], HarnessConfig]) -> _Lazy:
+    """Mark a preset factory for lazy loading. Factory receives preset name."""
+    return _Lazy(fn)
 
 
 # ─────────────────────────────────────────────────────────
 # Preset Harness Configurations
 # ─────────────────────────────────────────────────────────
 
-register_harness_preset(
-    "default",
-    HarnessConfig(
-        name="default",
-    ),
-)
+
+class HarnessPresets:
+    """Harness presets. Access as HarnessPresets.name or get_harness_preset("name")."""
+
+    default = HarnessConfig(name="default")
+
+    @lazy
+    def dr_tulu(name: str) -> HarnessConfig:
+        """Dr. Tulu preset with web and academic search tools."""
+        from .tools.search import semantic_scholar_search, serper_fetch_page, serper_web_search
+
+        return HarnessConfig(
+            name=name,
+            provider=ProviderConfig(
+                kind=ProviderKind.VLLM_SERVER,
+                kwargs={"timeout": 120},
+            ),
+            tools=(semantic_scholar_search, serper_web_search, serper_fetch_page),
+            system_prompt=DR_TULU_SYSTEM_PROMPT,
+            max_turns=10,
+            max_concurrency=4,
+            backend="openai_agents",
+            required_secrets=("S2_API_KEY", "SERPER_API_KEY", "OPENAI_API_KEY"),
+        )
+
+    @lazy
+    def codex_python(name: str) -> HarnessConfig:
+        """Python only code execution preset."""
+        from .sandbox import SandboxConfig, SandboxMode
+
+        return HarnessConfig(
+            name=name,
+            sandboxes=(
+                SandboxConfig(
+                    instances=3,
+                    image="python:3.12",
+                    mode=SandboxMode.DOCKER,
+                    startup_timeout=60.0,
+                    log_dir=_get_logs_dir(),
+                ),
+            ),
+        )
+
+    @lazy
+    def codex_agent(name: str) -> HarnessConfig:
+        """Coding agent preset with sandboxed shell execution."""
+        from .sandbox import SandboxConfig, SandboxMode
+        from .tools.search import serper_fetch_page, serper_web_search
+        from .tools.shell import execute_bash
+
+        return HarnessConfig(
+            name=name,
+            provider=ProviderConfig(
+                kind=ProviderKind.VLLM_SERVER,
+                # Higher timeout for multi-turn agent runs (each turn can take time)
+                kwargs={"timeout": 300},
+            ),
+            tools=(execute_bash, serper_fetch_page, serper_web_search),
+            system_prompt=CODING_AGENT_SYSTEM_PROMPT,
+            max_turns=10,
+            max_concurrency=4,
+            backend="openai_agents",
+            required_secrets=("OPENAI_API_KEY",),
+            sandboxes=(
+                SandboxConfig(
+                    capabilities=frozenset(Capability.BASH),
+                    instances=4,  # Match max_concurrency for parallel execution
+                    image="python:3.12",
+                    mode=SandboxMode.DOCKER,
+                    startup_timeout=120.0,
+                    log_dir=_get_logs_dir(),
+                ),
+            ),
+        )
+
+    @lazy
+    def codex_completion(name: str) -> HarnessConfig:
+        """Code completion agent with sandbox for testing and web search."""
+        from .sandbox import SandboxConfig, SandboxMode
+        from .tools.search import serper_fetch_page, serper_web_search
+        from .tools.shell import execute_bash
+
+        return HarnessConfig(
+            name=name,
+            provider=ProviderConfig(
+                kind=ProviderKind.VLLM_SERVER,
+                kwargs={"timeout": 300},
+            ),
+            tools=(execute_bash, serper_fetch_page, serper_web_search),
+            system_prompt=CODE_COMPLETION_SYSTEM_PROMPT,
+            max_turns=10,
+            max_concurrency=16,
+            backend="openai_agents",
+            required_secrets=("OPENAI_API_KEY",),
+            sandboxes=(
+                SandboxConfig(
+                    capabilities=frozenset(Capability.BASH),
+                    instances=1,  # Match max_concurrency for parallel execution
+                    image="python:3.12",
+                    mode=SandboxMode.DOCKER,
+                    startup_timeout=120.0,
+                    log_dir=_get_logs_dir(),
+                ),
+            ),
+        )
 
 
-@harness_preset("dr_tulu")
-def _dr_tulu() -> HarnessConfig:
-    """Dr. Tulu preset with web and academic search tools."""
-    from .tools.search import semantic_scholar_search, serper_fetch_page, serper_web_search
+# ─────────────────────────────────────────────────────────
+# API Functions
+# ─────────────────────────────────────────────────────────
 
-    return HarnessConfig(
-        name="dr_tulu",
-        provider=ProviderConfig(
-            kind=ProviderKind.VLLM_SERVER,
-            kwargs={"timeout": 120},
-        ),
-        tools=(semantic_scholar_search, serper_web_search, serper_fetch_page),
-        system_prompt=DR_TULU_SYSTEM_PROMPT,
-        max_turns=10,
-        max_concurrency=8,
-        backend="openai_agents",
-        required_secrets=("S2_API_KEY", "SERPER_API_KEY", "OPENAI_API_KEY"),
-    )
+
+def _is_preset(name: str) -> bool:
+    """Check if a name is a valid preset (not private, is HarnessConfig or _Lazy)."""
+    if name.startswith("_"):
+        return False
+    attr = getattr(HarnessPresets, name, None)
+    return isinstance(attr, (HarnessConfig, _Lazy))
+
+
+def get_harness_preset(name: str) -> HarnessConfig:
+    """Get a harness preset by name."""
+    if not hasattr(HarnessPresets, name) or not _is_preset(name):
+        available = ", ".join(list_harness_presets())
+        raise ValueError(f"Unknown harness preset: '{name}'. Available: {available}")
+    return getattr(HarnessPresets, name)
+
+
+def list_harness_presets() -> list[str]:
+    """List all available harness preset names."""
+    return sorted(name for name in dir(HarnessPresets) if _is_preset(name))
+
+
+def register_harness_preset(name: str, config: HarnessConfig) -> None:
+    """Register a harness preset directly."""
+    setattr(HarnessPresets, name, config)

@@ -120,6 +120,7 @@ class Tool:
         execute: The async or sync function that executes the tool.
         parameters: JSON schema for the tool's parameters.
         strict: Whether to use OpenAI strict mode for this tool.
+        sandbox: Required sandbox capabilities for execution.
     """
 
     name: str
@@ -127,6 +128,7 @@ class Tool:
     execute: Callable[..., Awaitable[str] | str]
     parameters: dict[str, Any] = field(default_factory=dict)
     strict: bool = False
+    sandbox: frozenset[str] = field(default_factory=frozenset)
 
     @property
     def schema(self) -> ToolSchema:
@@ -165,6 +167,7 @@ class Tool:
         name: str | None = None,
         description: str | None = None,
         strict: bool = False,
+        sandbox: set[str] | frozenset[str] | None = None,
     ) -> Tool:
         """Create a Tool from a function, deriving schema from type hints.
 
@@ -173,6 +176,7 @@ class Tool:
             name: Optional name override (defaults to function name).
             description: Optional description override (defaults to docstring).
             strict: Whether to use OpenAI strict mode.
+            sandbox: Required sandbox capabilities for execution.
 
         Returns:
             A new Tool instance.
@@ -200,6 +204,7 @@ class Tool:
             parameters=parameters,
             execute=fn,
             strict=strict,
+            sandbox=frozenset(sandbox or ()),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -216,6 +221,7 @@ class Tool:
             "description": self.description,
             "parameters": self.parameters,
             "strict": self.strict,
+            "sandbox": sorted(self.sandbox),
         }
 
 
@@ -223,6 +229,7 @@ def tool(
     name: str | None = None,
     description: str | None = None,
     strict: bool = False,
+    sandbox: set[str] | None = None,
 ) -> Callable[[F], Tool]:
     """Decorator to create a Tool from a function.
 
@@ -239,13 +246,20 @@ def tool(
         name: Optional name override for the tool.
         description: Optional description override.
         strict: Whether to use OpenAI strict mode.
+        sandbox: Required sandbox capabilities for execution.
 
     Returns:
         Decorator function that converts a function to a Tool.
     """
 
     def decorator(fn: F) -> Tool:
-        return Tool.from_function(fn, name=name, description=description, strict=strict)
+        return Tool.from_function(
+            fn,
+            name=name,
+            description=description,
+            strict=strict,
+            sandbox=sandbox,
+        )
 
     # Handle @tool without parentheses
     if callable(name):
