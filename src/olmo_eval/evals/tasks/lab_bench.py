@@ -33,6 +33,7 @@ from olmo_eval.common.types import (
     RequestType,
     Response,
     SamplingParams,
+    Split,
 )
 from olmo_eval.data import DataLoader, DataSource
 from olmo_eval.evals.tasks.common import Task, register, register_variant
@@ -78,6 +79,9 @@ class LabBenchTask(Task):
     Handles the shared pattern: combine `ideal` + `distractors` into shuffled
     choices, extract letter answers from model output.
     """
+
+    # LAB-Bench only publishes a "train" split on HuggingFace
+    split = Split.TRAIN
 
     @property
     def instances(self) -> Iterator[Instance]:
@@ -178,7 +182,7 @@ for _name, _subset in _STANDARD_SUBTASKS.items():
         _subset,
         (LabBenchTask,),
         {
-            "data_source": DataSource(path="futurehouse/lab-bench", subset=_subset, split="train"),
+            "data_source": DataSource(path="futurehouse/lab-bench", subset=_subset),
             "formatter": MCQAChatFormatter(system_prompt=_SYSTEM_PROMPT),
             "metrics": _DEFAULT_METRICS,
             "sampling_params": _DEFAULT_SAMPLING,
@@ -195,7 +199,7 @@ class LabBenchProtocolQA(LabBenchTask):
     "the listed protocol" which is stored in a separate dataset field.
     """
 
-    data_source = DataSource(path="futurehouse/lab-bench", subset="ProtocolQA", split="train")
+    data_source = DataSource(path="futurehouse/lab-bench", subset="ProtocolQA")
     formatter = MCQAChatFormatter(system_prompt=_SYSTEM_PROMPT)
     metrics = _DEFAULT_METRICS
     sampling_params = _DEFAULT_SAMPLING
