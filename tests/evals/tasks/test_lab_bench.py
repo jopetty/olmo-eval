@@ -230,7 +230,7 @@ class TestFormatRequest:
             metadata={"gold_idx": 0, "gold_text": "Kinase A"},
         )
         request = task.format_request(instance)
-        assert request.request_type == RequestType.COMPLETION
+        assert request.request_type == RequestType.LOGLIKELIHOOD
         assert request.continuations is not None
         assert len(request.continuations) == 2
 

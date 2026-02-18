@@ -163,6 +163,33 @@ class LabBenchTask(Task):
             messages=({"role": "user", "content": instance.question},),
         )
 
+    def _extract_answers(self, responses: Sequence[Response]) -> None:
+        """Extract answers, with argmax for logprob-based MC scoring."""
+        for response in responses:
+            if (
+                response.request.request_type == RequestType.LOGLIKELIHOOD
+                and len(response.outputs) > 1
+            ):
+                # MC logprob mode: pick the continuation with highest logprob
+                best_idx = 0
+                best_logprob = float("-inf")
+                for i, output in enumerate(response.outputs):
+                    logprob = (
+                        output.metadata.get("total_logprob", float("-inf"))
+                        if output.metadata
+                        else float("-inf")
+                    )
+                    if logprob > best_logprob:
+                        best_logprob = logprob
+                        best_idx = i
+                letter = chr(ord("A") + best_idx)
+                for output in response.outputs:
+                    output.extracted_answer = letter
+            else:
+                # Chat mode: parse "ANSWER: X" from generated text
+                for output in response.outputs:
+                    output.extracted_answer = self.extract_answer(output)
+
     def extract_answer(self, output: LMOutput) -> str | None:
         """Extract the last ``ANSWER: X`` letter from model output."""
         matches = list(_ANSWER_PATTERN.finditer(output.text))
@@ -178,6 +205,15 @@ End your response with "ANSWER: X" where X is the letter of your chosen answer."
 _DEFAULT_ACCURACY = AccuracyMetric(scorer=MultipleChoiceScorer)
 _DEFAULT_METRICS = (_DEFAULT_ACCURACY, PrecisionMetric(), CoverageMetric())
 _DEFAULT_SAMPLING = SamplingParams(temperature=0.0, max_tokens=1024)
+
+
+@dataclass(slots=True)
+class _MCLogprobFormatter(MultipleChoiceFormatter):
+    """MultipleChoiceFormatter that routes to logprobs instead of generation."""
+
+    @property
+    def request_type(self) -> RequestType:
+        return RequestType.LOGLIKELIHOOD
 
 
 # =============================================================================
@@ -244,7 +280,7 @@ for _task in _ALL_TASKS:
     register_variant(
         _task,
         "mc",
-        formatter=MultipleChoiceFormatter(),
+        formatter=_MCLogprobFormatter(),
         metrics=_DEFAULT_METRICS,
     )
     register_variant(
