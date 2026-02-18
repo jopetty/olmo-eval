@@ -167,11 +167,14 @@ for subset in MATH_SUBSETS:
     class_name = f"MinervaMath_{subset.title().replace('_', '')}"
 
     task_cls = type(class_name, (MinervaMathTask,), {
+        "__module__": __name__,
+        "__qualname__": class_name,
         "data_source": DataSource(
             path="EleutherAI/hendrycks_math",
             subset=subset,
         ),
     })
+    globals()[class_name] = task_cls
     register(task_name)(task_cls)
 
 
