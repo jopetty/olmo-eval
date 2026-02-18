@@ -162,7 +162,16 @@ class ProviderConfig:
 
         Returns:
             A new ProviderConfig instance.
+
+        Raises:
+            ValueError: If dependencies is a string instead of a list.
         """
+        deps = data.get("dependencies", [])
+        if isinstance(deps, str):
+            raise ValueError(
+                f"provider.dependencies must be a list, not a string: {deps!r}. "
+                "Use provider.dependencies=[url1,url2] syntax."
+            )
         return cls(
             kind=data.get("kind", ProviderKind.VLLM),
             model=data.get("model", data.get("model_name", "")),
@@ -174,7 +183,7 @@ class ProviderConfig:
             max_model_len=data.get("max_model_len"),
             max_concurrency=data.get("max_concurrency"),
             required_secrets=tuple(data.get("required_secrets", [])),
-            dependencies=tuple(data.get("dependencies", [])),
+            dependencies=tuple(deps),
             kwargs=data.get("kwargs", {}),
         )
 

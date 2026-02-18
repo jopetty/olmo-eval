@@ -352,12 +352,18 @@ class JobConfigAssembler:
         # Determine backend and sandbox requirements from harness preset
         backend_name: str | None = None
         sandbox_enabled = False
+        harness_provider_deps: list[str] = []
         if self.config.harness:
             from olmo_eval.harness import get_harness_preset
 
             preset = get_harness_preset(self.config.harness)
+            if self.config.harness_overrides:
+                from olmo_eval.cli.beaker.launch import _apply_harness_overrides
+
+                preset = _apply_harness_overrides(preset, self.config.harness_overrides)
             backend_name = preset.backend
             sandbox_enabled = bool(preset.sandboxes)
+            harness_provider_deps = list(preset.provider.dependencies)
 
         # Determine provider kind and whether to use separate venv for vLLM
         provider_kind = get_provider_kind(exp.model_spec)
@@ -435,7 +441,8 @@ class JobConfigAssembler:
 
         # Collect task dependencies and provider dependencies separately
         task_packages = self._extract_task_dependencies(exp.tasks, exp.task_overrides) or None
-        provider_packages = get_provider_dependencies(exp.model_spec) or None
+        provider_packages = get_provider_dependencies(exp.model_spec) + harness_provider_deps
+        provider_packages = provider_packages or None
 
         return BeakerJobConfig(
             name=exp.name,
