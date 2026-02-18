@@ -193,7 +193,6 @@ class LogprobScorer(Scorer):
         return sum(logprobs)
 
 
-
 @dataclass(frozen=True, slots=True)
 class ExactMatchFlexScorer(Scorer):
     """Flexible exact match that checks ANY extracted answer against ANY gold answer.
@@ -297,9 +296,9 @@ class MathVerifyScorer(Scorer):
         gold = str(instance.gold_answer)
         pred = str(output.extracted_answer)
 
-        # Try using math_verify first
+        # Try using math_verify first (optional dependency)
         try:
-            from math_verify import verify
+            from math_verify import verify  # type: ignore[import-not-found]
 
             result = verify(gold, pred)
             return 1.0 if result else 0.0

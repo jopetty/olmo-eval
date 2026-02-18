@@ -5,6 +5,7 @@ import re
 import signal
 
 import sympy
+import sympy.parsing.latex.errors
 from sympy.parsing.latex import parse_latex
 
 log = logging.getLogger(__name__)
