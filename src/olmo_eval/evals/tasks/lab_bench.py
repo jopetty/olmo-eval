@@ -99,6 +99,21 @@ class LabBenchTask(Task):
     # LAB-Bench only publishes a "train" split on HuggingFace
     split = Split.TRAIN
 
+    def __init_subclass__(cls, subset: str | None = None, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if subset is None:
+            return
+        snake = re.sub(r"([a-z])([A-Z][a-z])", r"\1_\2", subset).lower()
+        name = f"lab_bench_{snake}"
+        cls.data_source = DataSource(path="futurehouse/lab-bench", subset=subset)
+        cls.formatter = MCQAChatFormatter(system_prompt=_SYSTEM_PROMPT)
+        cls.metrics = _DEFAULT_METRICS
+        cls.primary_metric = _DEFAULT_ACCURACY
+        cls.sampling_params = _DEFAULT_SAMPLING
+        register(name)(cls)
+        register_variant(name, "mc", formatter=MultipleChoiceFormatter(), metrics=_DEFAULT_METRICS)
+        register_variant(name, "bpb", formatter=PPLFormatter(), metrics=(BPBMetric(),))
+
     @property
     def instances(self) -> Iterator[Instance]:
         if self._instances_cache is None:
@@ -207,60 +222,28 @@ _DEFAULT_METRICS = (_DEFAULT_ACCURACY, PrecisionMetric(), CoverageMetric())
 _DEFAULT_SAMPLING = SamplingParams(temperature=0.0, max_tokens=1024)
 
 
-@dataclass(slots=True)
-class _MCLogprobFormatter(MultipleChoiceFormatter):
-    """MultipleChoiceFormatter that routes to logprobs instead of generation."""
-
-    @property
-    def request_type(self) -> RequestType:
-        return RequestType.LOGLIKELIHOOD
-
-
 # =============================================================================
 # Task Registrations
 # =============================================================================
 
 
-# Subtasks that use LabBenchTask directly (question field is self-contained)
-_STANDARD_SUBTASKS: dict[str, str] = {
-    "lab_bench_litqa2": "LitQA2",
-    "lab_bench_dbqa": "DbQA",
-    "lab_bench_seqqa": "SeqQA",
-    "lab_bench_suppqa": "SuppQA",
-    "lab_bench_cloning_scenarios": "CloningScenarios",
-}
-
-for _name, _subset in _STANDARD_SUBTASKS.items():
-    _cls = type(
-        _subset,
-        (LabBenchTask,),
-        {
-            "__module__": __name__,
-            "__qualname__": _subset,
-            "data_source": DataSource(path="futurehouse/lab-bench", subset=_subset),
-            "formatter": MCQAChatFormatter(system_prompt=_SYSTEM_PROMPT),
-            "metrics": _DEFAULT_METRICS,
-            "primary_metric": _DEFAULT_ACCURACY,
-            "sampling_params": _DEFAULT_SAMPLING,
-        },
-    )
-    globals()[_subset] = _cls  # Make picklable by storing in module namespace
-    register(_name)(_cls)
+class LitQA2(LabBenchTask, subset="LitQA2"): ...
 
 
-@register("lab_bench_protocolqa")
-class LabBenchProtocolQA(LabBenchTask):
-    """ProtocolQA: Lab protocol question answering from LAB-Bench.
+class DbQA(LabBenchTask, subset="DbQA"): ...
 
-    Prepends the protocol text to the question, since questions reference
-    "the listed protocol" which is stored in a separate dataset field.
-    """
 
-    data_source = DataSource(path="futurehouse/lab-bench", subset="ProtocolQA")
-    formatter = MCQAChatFormatter(system_prompt=_SYSTEM_PROMPT)
-    metrics = _DEFAULT_METRICS
-    primary_metric = _DEFAULT_ACCURACY
-    sampling_params = _DEFAULT_SAMPLING
+class SeqQA(LabBenchTask, subset="SeqQA"): ...
+
+
+class SuppQA(LabBenchTask, subset="SuppQA"): ...
+
+
+class CloningScenarios(LabBenchTask, subset="CloningScenarios"): ...
+
+
+class ProtocolQA(LabBenchTask, subset="ProtocolQA"):
+    """Prepends the protocol text to the question."""
 
     def process_doc(self, doc: dict[str, Any], index: int = 0) -> Instance | None:
         protocol = doc.get("protocol", "")
@@ -268,24 +251,3 @@ class LabBenchProtocolQA(LabBenchTask):
             question = doc.get("question", "")
             doc = {**doc, "question": f"Protocol:\n{protocol}\n\nQuestion: {question}"}
         return super().process_doc(doc, index)
-
-
-# =============================================================================
-# Variant Registrations
-# =============================================================================
-
-_ALL_TASKS = (*_STANDARD_SUBTASKS, "lab_bench_protocolqa")
-
-for _task in _ALL_TASKS:
-    register_variant(
-        _task,
-        "mc",
-        formatter=_MCLogprobFormatter(),
-        metrics=_DEFAULT_METRICS,
-    )
-    register_variant(
-        _task,
-        "bpb",
-        formatter=PPLFormatter(),
-        metrics=(BPBMetric(),),
-    )
