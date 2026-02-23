@@ -135,6 +135,9 @@ class LiteLLMProvider(InferenceProvider):
             kwargs["stop"] = list(params.stop_sequences)[:_MAX_STOP_SEQUENCES]
         # Always request logprobs for metrics computation
         kwargs["logprobs"] = True
+        kwargs["top_logprobs"] = (
+            1  # NOTE: workaround for litellm proxy issue https://github.com/BerriAI/litellm/issues/21932
+        )
 
         response = await self._litellm.acompletion(**kwargs)
 
