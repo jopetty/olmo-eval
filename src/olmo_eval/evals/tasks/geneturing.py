@@ -122,7 +122,7 @@ class GeneRecallScorer(Scorer):
         if not gold_genes:
             return 0.0
         response = _strip_thinking(output.text).upper()
-        found = sum(1 for g in gold_genes if g in response)
+        found = sum(1 for g in gold_genes if re.search(r"\b" + re.escape(g) + r"\b", response))
         return found / len(gold_genes)
 
 
@@ -259,10 +259,18 @@ def _extract_chromosome(text: str) -> str | None:
 def _extract_boolean(text: str) -> str | None:
     """Map yes/no/true/false to TRUE/NA (protein-coding convention)."""
     lower = _strip_thinking(text).strip().lower()
-    # Check for explicit TRUE/NA first
-    if "true" in lower and "na" not in lower:
+    # Check for explicit TRUE/NA/FALSE first
+    if "true" in lower and "na" not in lower and "false" not in lower:
         return "TRUE"
-    if lower.startswith("na") or "not a protein" in lower or "non-coding" in lower:
+    if re.search(r"\bfalse\b", lower):
+        return "NA"
+    if (
+        lower.startswith("na")
+        or lower.startswith("n/a")
+        or "not a protein" in lower
+        or "not protein" in lower
+        or "non-coding" in lower
+    ):
         return "NA"
     # Check yes/no
     first_line = lower.split("\n")[0]
