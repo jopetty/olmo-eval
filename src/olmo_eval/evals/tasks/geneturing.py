@@ -103,8 +103,36 @@ class SetRecallScorer(Scorer):
 
 
 @dataclass(frozen=True, slots=True)
+class GeneRecallScorer(Scorer):
+    """Fraction of gold gene symbols mentioned anywhere in the model response.
+
+    Follows the GeneTuring paper: "The answer provided by an LLM was scored
+    based on the proportion of gold standard genes mentioned in the response."
+    Checks the full (think-stripped) output text rather than the extracted answer.
+    """
+
+    name: str = "gene_recall"
+
+    def score(self, instance: Instance, output: LMOutput) -> float:
+        if instance.gold_answer is None:
+            return 0.0
+        gold_genes = [
+            g.strip().upper() for g in re.split(r"[,;]", instance.gold_answer) if g.strip()
+        ]
+        if not gold_genes:
+            return 0.0
+        response = _strip_thinking(output.text).upper()
+        found = sum(1 for g in gold_genes if g in response)
+        return found / len(gold_genes)
+
+
+@dataclass(frozen=True, slots=True)
 class ContainmentScorer(Scorer):
-    """1.0 for exact match, 0.5 if gold is a substring of prediction, else 0.0."""
+    """1.0 for exact match, 0.5 for partial match (either direction), else 0.0.
+
+    Follows the GeneTuring paper: "A score of 0.5 was assigned if one of the
+    GO terms partially matched the gold standard."
+    """
 
     name: str = "containment"
 
@@ -115,8 +143,39 @@ class ContainmentScorer(Scorer):
         pred = str(output.extracted_answer).strip().lower()
         if gold == pred:
             return 1.0
-        if gold in pred:
+        if gold in pred or pred in gold:
             return 0.5
+        return 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class SpeciesScorer(Scorer):
+    """Species matching with partial credit for superset answers.
+
+    Follows the GeneTuring paper: 1.0 for exact match, 0.5 if the model's
+    response contains the gold species (a "correct superset"), 0.0 otherwise.
+    """
+
+    name: str = "species"
+
+    def score(self, instance: Instance, output: LMOutput) -> float:
+        if instance.gold_answer is None:
+            return 0.0
+        gold = instance.gold_answer.strip().lower()
+        # Check extracted answer first for exact match
+        if output.extracted_answer is not None:
+            pred = str(output.extracted_answer).strip().lower()
+            if gold == pred:
+                return 1.0
+        # Check if the gold species appears anywhere in the raw output
+        # (the model mentioned the right answer among other text)
+        raw = _strip_thinking(output.text).lower()
+        if gold in raw:
+            return 0.5
+        # Also check aliases in reverse: if gold is "worm", check for "c. elegans"
+        for alias, common in _SPECIES_ALIASES.items():
+            if common == gold and alias in raw:
+                return 0.5
         return 0.0
 
 
@@ -148,7 +207,28 @@ _THINK_PATTERN = re.compile(r"<think>.*?</think>\s*", re.DOTALL)
 _CHR_PATTERN = re.compile(r"chr(?:omosome\s*)?(\d+|[XYxy])", re.IGNORECASE)
 _AMINO_ACID_PATTERN = re.compile(r"[ACDEFGHIKLMNPQRSTVWY]{5,}", re.IGNORECASE)
 _DNA_PATTERN = re.compile(r"[ACGTacgt]{10,}")
-_KNOWN_SPECIES = frozenset({"human", "mouse", "rat", "zebrafish", "worm", "yeast", "fruit fly"})
+_KNOWN_SPECIES = frozenset(
+    {"human", "mouse", "rat", "zebrafish", "worm", "yeast", "fruit fly", "chicken"}
+)
+
+# Scientific / Latin name → common name mapping for species extraction.
+_SPECIES_ALIASES: dict[str, str] = {
+    "homo sapiens": "human",
+    "mus musculus": "mouse",
+    "rattus norvegicus": "rat",
+    "rattus": "rat",
+    "danio rerio": "zebrafish",
+    "caenorhabditis elegans": "worm",
+    "c. elegans": "worm",
+    "c.elegans": "worm",
+    "saccharomyces cerevisiae": "yeast",
+    "s. cerevisiae": "yeast",
+    "s.cerevisiae": "yeast",
+    "drosophila melanogaster": "fruit fly",
+    "drosophila": "fruit fly",
+    "d. melanogaster": "fruit fly",
+    "gallus gallus": "chicken",
+}
 
 
 def _strip_thinking(text: str) -> str:
@@ -235,33 +315,56 @@ def _extract_first_line_answer(text: str) -> str | None:
         line = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", line)
         # Strip common verbose prefixes (e.g. "The official gene symbol is ...")
         line = re.sub(
-            r"^(the\s+(official\s+)?(gene\s+)?(symbol|name|answer)\s+"
-            r"(is|for|of|corresponding to)\s+[^:]*?(is\s+|:\s*)"
+            r"^(the\s+(?:official\s+)?(?:gene\s+)?(?:symbol|name|answer|identifier)\s+"
+            r"(?:is|for|of|corresponding to)\s+[^:]*?(?:is\s+|:\s*)"
+            r"|the\s+(?:ensembl\s+)?(?:gene\s+)?identifier\s+\S+\s+"
+            r"(?:corresponds?\s+to|maps?\s+to|is)\s+"
+            r"(?:the\s+)?(?:official\s+)?(?:gene\s+)?(?:symbol\s+)?"
             r"|based on[^,]*,\s*"
             r"|according to[^,]*,\s*"
             r"|the\s+gene\s+symbol\s+for\s+.*?\s+is\s+"
-            r"|the\s+official\s+gene\s+symbol\s+.*?\s+is\s+)",
+            r"|the\s+official\s+gene\s+symbol\s+.*?\s+is\s+"
+            r"|the\s+SNP\s+\S+\s+is\s+(?:most\s+closely\s+)?associated\s+with\s+"
+            r"(?:the\s+)?(?:gene\s+)?)",
             "",
             line,
             flags=re.IGNORECASE,
         )
-        # Strip trailing punctuation and parenthetical notes
-        line = re.sub(r"\s*\(.*?\)\s*$", "", line)
         line = line.rstrip(".")
         # Take first sentence only ("GENE. This gene encodes..." → "GENE")
         cleaned = line.split(". ")[0].strip()
+        # Strip trailing parenthetical notes ("PTK7 (Protein Tyrosine Kinase 7)" → "PTK7")
+        cleaned = re.sub(r"\s*\(.*?\)\s*$", "", cleaned).strip()
         if cleaned:
             return cleaned
     return None
 
 
 def _extract_species(text: str) -> str | None:
-    """Extract a species name from model output."""
+    """Extract a species name from model output.
+
+    Prefers the *last* mentioned species (the model's conclusion) over earlier
+    incidental mentions.  Also resolves scientific / Latin names via
+    ``_SPECIES_ALIASES``.
+    """
     lower = _strip_thinking(text).lower()
+
+    # Build list of (position, common_name) for every mention.
+    mentions: list[tuple[int, str]] = []
     for species in _KNOWN_SPECIES:
-        if species in lower:
-            return species
-    return None
+        idx = lower.rfind(species)
+        if idx >= 0:
+            mentions.append((idx, species))
+    for alias, common in _SPECIES_ALIASES.items():
+        idx = lower.rfind(alias)
+        if idx >= 0:
+            mentions.append((idx, common))
+
+    if not mentions:
+        return None
+    # Return the species whose *last* mention is latest in the text.
+    mentions.sort(key=lambda t: t[0], reverse=True)
+    return mentions[0][1]
 
 
 def _parse_name_set(text: str) -> set[str]:
@@ -281,6 +384,147 @@ def _extract_gene_names(text: str) -> str | None:
     lower = _strip_thinking(text).strip().lower()
     if "no gene" in lower or "no protein" in lower or lower.startswith("none"):
         return "No gene"
+    return _extract_first_line_answer(text)
+
+
+# Pattern for plausible human gene symbols: 1-2 uppercase letters followed by
+# at least one alphanumeric char, optionally with hyphens (e.g. HLA-A).
+_GENE_SYMBOL_PATTERN = re.compile(r"\b([A-Z][A-Z0-9][A-Z0-9/.-]{0,12})\b")
+
+# Common abbreviations that look like gene symbols but aren't.
+_NOT_GENE_SYMBOLS = frozenset(
+    {
+        "THE",
+        "AND",
+        "FOR",
+        "NOT",
+        "ARE",
+        "BUT",
+        "ALL",
+        "CAN",
+        "HAS",
+        "WAS",
+        "ONE",
+        "OUR",
+        "OUT",
+        "YOU",
+        "DNA",
+        "RNA",
+        "SNP",
+        "GO",
+        "NCBI",
+        "OMIM",
+        "PHP",
+        "PFK",
+        "MRI",
+        "QT",
+        "AD",
+        "AR",
+        "IV",
+        "CKD",
+        "MDS",
+        "ASD",
+        "ECM",
+        "BAM",
+        "HERE",
+        "THIS",
+        "THAT",
+        "WITH",
+        "HAVE",
+        "FROM",
+        "THEY",
+        "BEEN",
+        "SAID",
+        "EACH",
+        "WILL",
+        "ALSO",
+        "THAN",
+        "NOW",
+        "ITS",
+        "WHO",
+        "MAY",
+        "USE",
+        "DUE",
+        "TYPE",
+        "GENE",
+        "HUGO",
+        "HGNC",
+        "HGMD",
+        "KEY",
+        "RARE",
+        "NOTE",
+        "HTTP",
+        "HTTPS",
+        "STEP",
+        "VIA",
+    }
+)
+
+
+def _extract_gene_symbols(text: str) -> str | None:
+    """Extract gene symbols from the full model output.
+
+    Scans all uppercase tokens that look like gene symbols, returning them as
+    a comma-separated string for use with set-based scorers.
+    """
+    text = _strip_thinking(text)
+    # Prefer bold-formatted symbols (**GENE**) as the model's primary answers
+    bold_genes = re.findall(r"\*\*([A-Z][A-Z0-9/.-]{1,12})\*\*", text)
+    bold_genes = [g for g in bold_genes if g not in _NOT_GENE_SYMBOLS]
+    if bold_genes:
+        return ", ".join(bold_genes)
+
+    # Fall back to all uppercase gene-like tokens
+    candidates = _GENE_SYMBOL_PATTERN.findall(text)
+    candidates = [c for c in candidates if c not in _NOT_GENE_SYMBOLS]
+    if candidates:
+        # Deduplicate while preserving order
+        seen: set[str] = set()
+        unique = []
+        for c in candidates:
+            if c not in seen:
+                seen.add(c)
+                unique.append(c)
+        return ", ".join(unique)
+    return None
+
+
+def _extract_go_term(text: str) -> str | None:
+    """Extract a Gene Ontology term name from model output.
+
+    Looks for quoted terms or terms following "is (likely)" patterns, which is
+    how models typically present GO term predictions.
+    """
+    text = _strip_thinking(text)
+
+    # Try to find quoted GO term (the most reliable signal)
+    # Prefer the first quoted term after "is likely" or "is"
+    quoted_after_is = re.search(
+        r'is\s+(?:likely\s+)?["\u201c]([^"\u201d]+)["\u201d]',
+        text,
+        re.IGNORECASE,
+    )
+    if quoted_after_is:
+        return quoted_after_is.group(1).strip()
+
+    # Any quoted string that isn't a gene name or GO ID
+    quoted = re.findall(r'["\u201c]([^"\u201d]{5,})["\u201d]', text)
+    for q in quoted:
+        if not re.fullmatch(r"GO:\d+", q) and not q.isupper():
+            return q.strip()
+
+    # Fall back to bold text after "is (likely)"
+    bold_after_is = re.search(
+        r"is\s+(?:likely\s+)?\*\*([^*]+)\*\*",
+        text,
+        re.IGNORECASE,
+    )
+    if bold_after_is:
+        term = bold_after_is.group(1).strip()
+        # Strip GO ID suffix like "(GO:0006629)"
+        term = re.sub(r"\s*\(GO:\d+\)\s*$", "", term)
+        return term
+
     return _extract_first_line_answer(text)
 
 
@@ -334,8 +578,12 @@ _MULTI_SPECIES_FORMATTER = ChatFormatter(
     system_prompt="""\
 You are a genomics expert. You will be given a DNA sequence and asked which \
 organism it comes from. The answer is one of: human, mouse, rat, zebrafish, \
-worm, yeast, fruit fly. Give only the organism name with no explanation.""",
+worm, yeast, fruit fly, chicken. Give only the organism name with no explanation.""",
 )
+
+# Lower max_tokens for tasks where the answer is short but inputs are long
+# (DNA sequences), to reduce generation time and avoid vLLM timeouts.
+_SHORT_ANSWER_SAMPLING = SamplingParams(temperature=0.0, max_tokens=128)
 
 
 # =============================================================================
@@ -352,6 +600,7 @@ class GeneTuringTask(Task):
         scorer: type[Scorer] = ExactMatchScorer,
         metric_name: str = "accuracy",
         formatter: ChatFormatter | None = None,
+        sampling_params: SamplingParams | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init_subclass__(**kwargs)
@@ -362,7 +611,7 @@ class GeneTuringTask(Task):
 
         cls.data_source = DataSource(path="allenai/geneturing", subset=subset)
         cls.formatter = formatter or _DEFAULT_FORMATTER
-        cls.sampling_params = _DEFAULT_SAMPLING
+        cls.sampling_params = sampling_params or _DEFAULT_SAMPLING
 
         if metric_name == "accuracy":
             metric: Metric = AccuracyMetric(scorer=scorer)
@@ -450,7 +699,11 @@ class HumanGenomeDnaAlignment(
         return _extract_chromosome(output.text)
 
 
-class AminoAcidTranslation(GeneTuringTask, subset="amino_acid_translation"):
+class AminoAcidTranslation(
+    GeneTuringTask,
+    subset="amino_acid_translation",
+    sampling_params=_SHORT_ANSWER_SAMPLING,
+):
     def extract_answer(self, output: LMOutput) -> str | None:
         return _extract_sequence(output.text, _AMINO_ACID_PATTERN)
 
@@ -489,12 +742,12 @@ class GeneAlias(
 class GeneDiseaseAssociation(
     GeneTuringTask,
     subset="gene_disease_association",
-    scorer=SetRecallScorer,
+    scorer=GeneRecallScorer,
     metric_name="recall",
     formatter=_GENE_DISEASE_FORMATTER,
 ):
     def extract_answer(self, output: LMOutput) -> str | None:
-        return _extract_first_line_answer(output.text)
+        return _extract_gene_symbols(output.text)
 
 
 # =============================================================================
@@ -510,13 +763,16 @@ class GeneOntology(
     formatter=_GENE_ONTOLOGY_FORMATTER,
 ):
     def extract_answer(self, output: LMOutput) -> str | None:
-        return _extract_first_line_answer(output.text)
+        return _extract_go_term(output.text)
 
 
 class MultiSpeciesDnaAlignment(
     GeneTuringTask,
     subset="multi_species_dna_alignment",
+    scorer=SpeciesScorer,
+    metric_name="species",
     formatter=_MULTI_SPECIES_FORMATTER,
+    sampling_params=_SHORT_ANSWER_SAMPLING,
 ):
     def extract_answer(self, output: LMOutput) -> str | None:
         return _extract_species(output.text)
