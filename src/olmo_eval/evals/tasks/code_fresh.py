@@ -38,8 +38,8 @@ class CodeFreshBase(Task):
             loader = DataLoader()
             source = self.config.get_data_source()
             for doc in loader.load(source):
-                if doc["file_tokens"] * 1.05 > MAX_LENGTH:
-                    # the 1.05 is a bit of buffer to avoid edge cases
+                if doc["file_tokens"] > MAX_LENGTH:
+                    # throw away documents that are too long
                     continue
 
                 self._instances_cache.append(self.process_doc(doc))
