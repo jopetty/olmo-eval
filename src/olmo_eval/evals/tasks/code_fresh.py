@@ -137,11 +137,11 @@ SHARED_ATTRS: dict = {
 VARIANTS: dict = {
     "bpb": {
         "formatter": PPLFormatter(leading_space=False, always_prepend_separator=True),
-        "metrics": (BPBMetric()),
+        "metrics": (BPBMetric(),)
     },
     "ppl": {
         "formatter": PPLFormatter(leading_space=False, always_prepend_separator=True),
-        "metrics": (CorpusPerplexityMetric()),
+        "metrics": (CorpusPerplexityMetric(),)
     },
 }
 
