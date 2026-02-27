@@ -2,7 +2,6 @@
 
 from collections.abc import Iterator
 from typing import Any
-from unicode_segmentation_rs import split_word_bound_indices
 
 from olmo_eval.common.metrics import CorpusPerplexityMetric
 from olmo_eval.common.types import (
@@ -12,15 +11,16 @@ from olmo_eval.common.types import (
     Split,
 )
 from olmo_eval.data import DataLoader, DataSource
-from olmo_eval.common.types import Instance, LMOutput, LMRequest, SamplingParams
-from olmo_eval.evals.tasks.common import Task, register, register_variant, register_subtasks
+from olmo_eval.common.types import Instance, LMRequest, SamplingParams
+from olmo_eval.evals.suites.registry import AggregationStrategy, make_suite
+from olmo_eval.evals.tasks.common import Task, register_subtasks
 from olmo_eval.common.formatters import PPLFormatter
 from olmo_eval.common.metrics import BPBMetric
 
 MAX_LENGTH = 4096
 
 
-class CodeFresh(Task):
+class CodeFreshBase(Task):
     """Base class for CodeFresh perplexity tasks."""
 
     split = Split.TRAIN
@@ -39,12 +39,16 @@ class CodeFresh(Task):
             loader = DataLoader()
             source = self.config.get_data_source()
             for doc in loader.load(source):
+                if doc["file_tokens"] * 1.05 > MAX_LENGTH:
+                    # the 1.05 is a bit of buffer to avoid edge cases
+                    continue
+
                 self._instances_cache.append(self.process_doc(doc))
         yield from self._instances_cache
 
     def process_doc(self, doc: dict[str, Any], index: int = 0) -> Instance:
         """Convert a dataset document to an Instance."""
-        text = doc["file_contents"].strip()[:MAX_LENGTH * 4] # assuming a generous 4 tokens per character
+        text = doc["file_contents"].strip()
 
         return Instance(
             question="",  # Context
@@ -69,75 +73,91 @@ class CodeFresh(Task):
         )
 
 
+# @register("code_fresh")
+class CodeFreshFile(CodeFreshBase):
+    """MBPP code generation task."""
+    data_source = DataSource(path="allenai/dolma_eval_code_perplexity_T3_2025_1M_file")
+
+
 # =============================================================================
 # Variant Registrations
 # =============================================================================
 
 LANGUAGES = [
-    "C"
-    "C#"
-    "C++"
-    "CSS"
-    "Clojure"
-    "Common Lisp"
-    "Dart"
-    "Erlang"
-    "Fortran"
-    "Go"
-    "HTML"
-    "Haskell"
-    "Java"
-    "Java Server Page"
-    "JavaScript"
-    "Julia"
-    "Kotlin"
-    "Lua"
-    "Markdown"
-    "Mathematica"
-    "Matlab"
-    "OCaml"
-    "Objective-C"
-    "Objective-C++"
-    "PHP"
-    "Perl"
-    "PowerShell"
-    "Python"
-    "Ruby"
-    "Rust"
-    "Scala"
-    "Scheme"
-    "Swift"
-    "Tcl"
-    "TeX"
-    "TypeScript"
-    "Vue"
-    "reStructuredText"
-    "systemverilog"
-    "verilog"
-    "vhdl"
+    "blade",
+    "c",
+    "clojure",
+    "common_lisp",
+    "cpp",
+    "csharp",
+    "css",
+    "dart",
+    "erlang",
+    "fortran",
+    "go",
+    "haskell",
+    "html",
+    "java",
+    "java_server_page",
+    "javascript",
+    "julia",
+    "kotlin",
+    "lua",
+    "markdown",
+    "mathematica",
+    "matlab",
+    "objective_c",
+    "objective_cpp",
+    "ocaml",
+    "perl",
+    "php",
+    "powershell",
+    "python",
+    "restructuredtext",
+    "ruby",
+    "rust",
+    "scala",
+    "scheme",
+    "swift",
+    "systemverilog",
+    "tcl",
+    "tex",
+    "typescript",
+    "verilog",
+    "vhdl",
+    "vue",
 ]
 
 SHARED_ATTRS: dict = {
     "metrics": (),
-    "sampling_params": SamplingParams(max_tokens=MAX_LENGTH, temperature=0.0, stop_sequences=("\n\n",)),
+    "sampling_params": SamplingParams(max_tokens=MAX_LENGTH, temperature=0.0, stop_sequences=()),
 }
 
 VARIANTS: dict = {
     "bpb": {
         "formatter": PPLFormatter(leading_space=False, always_prepend_separator=True),
-        "metrics": (BPBMetric(),),
+        "metrics": (BPBMetric()),
     },
-    "3shot": {"num_fewshot": 0},
+    "ppl": {
+        "formatter": PPLFormatter(leading_space=False, always_prepend_separator=True),
+        "metrics": (CorpusPerplexityMetric()),
+    },
 }
 
 register_subtasks(
-    CodeFresh,
+    CodeFreshFile,
     subtasks=LANGUAGES,
-    task_prefix="code_fresh_file",
+    task_prefix="code_fresh",
     data_source="allenai/dolma_eval_code_perplexity_T3_2025_1M_file",
     subtask_attr="subset",
     class_attrs=SHARED_ATTRS,
     variants=VARIANTS,
 )
 
-__all__ = ["CodeFresh"]
+make_suite(
+    "code_fresh",
+    tuple(f"code_fresh_{language}" for language in LANGUAGES),
+    aggregation=AggregationStrategy.AVERAGE,
+)
+
+__all__ = ["CodeFreshFile"]
