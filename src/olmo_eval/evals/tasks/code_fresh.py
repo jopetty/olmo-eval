@@ -76,7 +76,7 @@ class CodeFreshBase(Task):
 class CodeFreshFile(CodeFreshBase):
     """MBPP code generation task."""
 
-    data_source = DataSource(path="allenai/dolma_eval_code_perplexity_T3_2025_1M_file")
+    data_source = DataSource(path="allenai/code_fresh_0825_1225")
 
 
 # =============================================================================
