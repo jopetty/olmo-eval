@@ -3,34 +3,6 @@
 from olmo_eval.evals.suites.registry import make_suite
 
 # =============================================================================
-# GPQA Suite
-# =============================================================================
-
-_GPQA_TASKS = (
-    "gpqa_diamond",
-    "gpqa_main",
-    "gpqa_extended",
-)
-
-GPQA = make_suite(
-    "gpqa",
-    _GPQA_TASKS,
-    description="GPQA graduate-level science QA (Idavidrein/gpqa)",
-)
-
-GPQA_MC = make_suite(
-    "gpqa:mc",
-    tuple(f"{t}:mc" for t in _GPQA_TASKS),
-    description="GPQA with logprob-based MC scoring",
-)
-
-GPQA_BPB = make_suite(
-    "gpqa:bpb",
-    tuple(f"{t}:bpb" for t in _GPQA_TASKS),
-    description="GPQA with bits-per-byte evaluation",
-)
-
-# =============================================================================
 # LAB-Bench Suite
 # =============================================================================
 

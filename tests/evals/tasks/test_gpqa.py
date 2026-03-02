@@ -171,7 +171,6 @@ class TestProcessDoc:
         instance = task.process_doc(doc, index=0)
         assert "[title]" not in instance.question
         assert "[2023]" not in instance.question
-        assert "." in instance.question  # [title] replaced with .
         assert "Answer" in instance.metadata["gold_text"]
         assert "[ref]" not in instance.metadata["gold_text"]
 

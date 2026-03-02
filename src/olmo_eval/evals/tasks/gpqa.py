@@ -47,8 +47,6 @@ _ANSWER_PATTERN = re.compile(r"ANSWER\s*:\s*\(?([A-Z])\)?", re.IGNORECASE)
 _PAREN_LETTER = re.compile(r"\(([A-Z])\)")
 _LAST_CAPITAL = re.compile(r"\b([A-Z])\b")
 
-# Matches "[title]:" markers sometimes present in GPQA answer text
-_TITLE_MARKER = re.compile(r"^\[.*?\]\s*")
 
 # ---------------------------------------------------------------------------
 # Subject grouping
@@ -147,25 +145,30 @@ class GPQATask(Task):
             doc.get("Incorrect Answer 2", ""),
             doc.get("Incorrect Answer 3", ""),
         ]
-        choices = [_clean_answer(correct)] + [_clean_answer(a) for a in incorrect if a]
+        choices = [_clean_text(correct)] + [_clean_text(a) for a in incorrect if a]
 
         # Deterministic per-question shuffle (seed=111 matches old oe-eval convention)
         rng = random.Random(f"{self.config.seed}:{index}")
         rng.shuffle(choices)
 
-        gold_idx = choices.index(_clean_answer(correct))
+        gold_idx = choices.index(_clean_text(correct))
         gold_letter = chr(ord("A") + gold_idx)
 
+        metadata: dict[str, Any] = {
+            "index": index,
+            "gold_idx": gold_idx,
+            "gold_text": _clean_text(correct),
+            "subdomain": subdomain,
+        }
+        explanation = doc.get("Explanation")
+        if explanation:
+            metadata["explanation"] = explanation
+
         return Instance(
-            question=question,
+            question=_clean_text(question),
             gold_answer=gold_letter,
             choices=tuple(choices),
-            metadata={
-                "index": index,
-                "gold_idx": gold_idx,
-                "gold_text": _clean_answer(correct),
-                "subdomain": subdomain,
-            },
+            metadata=metadata,
         )
 
     @property
@@ -230,9 +233,15 @@ class GPQATask(Task):
         return None
 
 
-def _clean_answer(text: str) -> str:
-    """Strip ``[title]:`` markers from answer text."""
-    return _TITLE_MARKER.sub("", text).strip()
+_BRACKET_MARKER = re.compile(r"\[.*?\]")
+_MULTI_SPACE = re.compile(r"  +")
+
+
+def _clean_text(text: str) -> str:
+    """Normalize GPQA text: strip bracketed markers and collapse whitespace."""
+    text = _BRACKET_MARKER.sub("", text)
+    text = _MULTI_SPACE.sub(" ", text)
+    return text.strip()
 
 
 # ---------------------------------------------------------------------------
