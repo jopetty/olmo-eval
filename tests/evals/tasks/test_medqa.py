@@ -83,6 +83,40 @@ class TestProcessDoc:
         doc = {"question": "Q?", "choices": ["A", "B"], "answer": "A"}
         assert task.process_doc(doc, index=0) is None
 
+    def test_skip_negative_answer_idx(self, task):
+        doc = {"question": "Q?", "choices": ["A", "B"], "answer_idx": -1}
+        assert task.process_doc(doc, index=0) is None
+
+    def test_skip_out_of_range_answer_idx(self, task):
+        doc = {"question": "Q?", "choices": ["A", "B"], "answer_idx": 5}
+        assert task.process_doc(doc, index=0) is None
+
+    def test_skip_non_int_answer_idx(self, task):
+        doc = {"question": "Q?", "choices": ["A", "B"], "answer_idx": "0"}
+        assert task.process_doc(doc, index=0) is None
+
+    def test_duplicate_choices_tracks_correct_gold(self, task):
+        import random
+
+        doc = {
+            "question": "Q?",
+            "choices": ["Same", "Same", "Different"],
+            "answer_idx": 1,
+            "answer": "Same",
+        }
+        instance = task.process_doc(doc, index=0)
+        assert instance is not None
+
+        # Reproduce the deterministic shuffle independently to verify gold_idx
+        # tracks the original position, not just the first text match
+        paired = list(zip(doc["choices"], range(len(doc["choices"])), strict=True))
+        rng = random.Random(f"{task.config.seed}:0")
+        rng.shuffle(paired)
+        expected_gold_idx = next(
+            i for i, (_, orig) in enumerate(paired) if orig == doc["answer_idx"]
+        )
+        assert instance.metadata["gold_idx"] == expected_gold_idx
+
     def test_metadata_contains_gold_idx_and_text(self, task):
         doc = {
             "question": "Q?",

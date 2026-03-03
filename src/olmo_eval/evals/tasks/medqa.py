@@ -72,14 +72,20 @@ class MedQA(Task):
         if not question or not choices or answer_idx is None:
             return None
 
-        gold_text = choices[answer_idx]
+        if not isinstance(answer_idx, int) or not (0 <= answer_idx < len(choices)):
+            return None
+
+        # Track gold by original position to handle duplicate choice strings
+        gold_positions = list(range(len(choices)))
 
         # Deterministic per-question shuffle
         rng = random.Random(f"{self.config.seed}:{index}")
-        shuffled = list(choices)
-        rng.shuffle(shuffled)
+        paired = list(zip(choices, gold_positions, strict=True))
+        rng.shuffle(paired)
+        shuffled = [c for c, _ in paired]
 
-        gold_idx = shuffled.index(gold_text)
+        gold_idx = next(i for i, (_, orig) in enumerate(paired) if orig == answer_idx)
+        gold_text = choices[answer_idx]
         gold_letter = chr(ord("A") + gold_idx)
 
         metadata: dict[str, Any] = {
