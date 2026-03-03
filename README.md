@@ -703,7 +703,8 @@ cluster: h100
 | `--name` | `-n` | required | Experiment name |
 | `--model` | `-m` | required | Model name or HuggingFace path (can specify multiple) |
 | `--task` | `-t` | required | Task name with optional `@priority` suffix (can specify multiple) |
-| `--override` | `-o` | none | Override for preceding `-m` or `-t` (can specify multiple) |
+| `--harness` | `-H` | `default` | Harness preset name |
+| `--override` | `-o` | none | Override for preceding `-m` or `-t` or `-H` (can specify multiple) |
 | `--cluster` | `-c` | required | Cluster alias (`h100`, `a100`, `aus`) or full name |
 | `--gpus` | `-G` | `1` | Number of GPUs per model instance |
 | `--parallelism` | `-P` | `1` | Number of model instances to run in parallel |

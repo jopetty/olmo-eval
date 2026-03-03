@@ -76,21 +76,6 @@ class HarnessPresets:
         )
 
     @lazy
-    def simple_tpm(name: str) -> HarnessConfig:
-        """Simple preset with LiteLLM and batched processing."""
-        from olmo_eval.runners.asynq.batching import BatchConfig
-
-        return HarnessConfig(
-            name=name,
-            provider=ProviderConfig(kind=ProviderKind.VLLM_SERVER),
-            metrics=MetricsConfig(
-                enabled=True,
-                collect_gpu=False,
-            ),
-            batching=BatchConfig.batched(),
-        )
-
-    @lazy
     def simple_agent(name: str) -> HarnessConfig:
         """Simple agent preset."""
         return HarnessConfig(
