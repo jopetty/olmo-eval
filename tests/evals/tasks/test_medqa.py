@@ -37,7 +37,6 @@ class TestProcessDoc:
             "question": "What is the most likely diagnosis?",
             "choices": ["Diabetes", "Hypertension", "Asthma", "COPD"],
             "answer_idx": 0,
-            "answer": "Diabetes",
         }
         instance = task.process_doc(doc, index=0)
 
@@ -51,7 +50,6 @@ class TestProcessDoc:
             "question": "What is the answer?",
             "choices": ["A-ans", "B-ans", "C-ans", "D-ans"],
             "answer_idx": 2,
-            "answer": "C-ans",
         }
         instance = task.process_doc(doc, index=42)
 
@@ -64,7 +62,6 @@ class TestProcessDoc:
             "question": "Q?",
             "choices": ["A", "B", "C", "D"],
             "answer_idx": 0,
-            "answer": "A",
         }
         inst1 = task.process_doc(doc, index=7)
         inst2 = task.process_doc(doc, index=7)
@@ -72,15 +69,15 @@ class TestProcessDoc:
         assert inst1.gold_answer == inst2.gold_answer
 
     def test_skip_missing_question(self, task):
-        doc = {"question": "", "choices": ["A", "B"], "answer_idx": 0, "answer": "A"}
+        doc = {"question": "", "choices": ["A", "B"], "answer_idx": 0}
         assert task.process_doc(doc, index=0) is None
 
     def test_skip_missing_choices(self, task):
-        doc = {"question": "Q?", "choices": [], "answer_idx": 0, "answer": "A"}
+        doc = {"question": "Q?", "choices": [], "answer_idx": 0}
         assert task.process_doc(doc, index=0) is None
 
     def test_skip_missing_answer_idx(self, task):
-        doc = {"question": "Q?", "choices": ["A", "B"], "answer": "A"}
+        doc = {"question": "Q?", "choices": ["A", "B"]}
         assert task.process_doc(doc, index=0) is None
 
     def test_skip_negative_answer_idx(self, task):
@@ -102,13 +99,11 @@ class TestProcessDoc:
             "question": "Q?",
             "choices": ["Same", "Same", "Different"],
             "answer_idx": 1,
-            "answer": "Same",
         }
         instance = task.process_doc(doc, index=0)
         assert instance is not None
 
-        # Reproduce the deterministic shuffle independently to verify gold_idx
-        # tracks the original position, not just the first text match
+        # Reproduce shuffle to verify gold tracks original position, not first text match
         paired = list(zip(doc["choices"], range(len(doc["choices"])), strict=True))
         rng = random.Random(f"{task.config.seed}:0")
         rng.shuffle(paired)
@@ -122,7 +117,6 @@ class TestProcessDoc:
             "question": "Q?",
             "choices": ["Wrong", "Right"],
             "answer_idx": 1,
-            "answer": "Right",
         }
         instance = task.process_doc(doc, index=0)
         assert "gold_idx" in instance.metadata

@@ -65,6 +65,7 @@ class MedQA(Task):
         yield from self._instances_cache
 
     def process_doc(self, doc: dict[str, Any], index: int = 0) -> Instance | None:
+        """Convert a MedQA document to an Instance with shuffled choices."""
         question = doc.get("question", "")
         choices = doc.get("choices", [])
         answer_idx = doc.get("answer_idx")
@@ -75,12 +76,10 @@ class MedQA(Task):
         if not isinstance(answer_idx, int) or not (0 <= answer_idx < len(choices)):
             return None
 
-        # Track gold by original position to handle duplicate choice strings
-        gold_positions = list(range(len(choices)))
-
-        # Deterministic per-question shuffle
+        # Deterministic per-question shuffle, tracking original positions
+        # so duplicate choice strings don't confuse gold lookup
         rng = random.Random(f"{self.config.seed}:{index}")
-        paired = list(zip(choices, gold_positions, strict=True))
+        paired = list(zip(choices, range(len(choices)), strict=True))
         rng.shuffle(paired)
         shuffled = [c for c, _ in paired]
 
@@ -117,6 +116,7 @@ class MedQA(Task):
         )
 
     def _extract_answers(self, responses: Sequence[Response]) -> None:
+        """Extract answers, with argmax for logprob-based MC scoring."""
         for response in responses:
             if (
                 response.request.request_type == RequestType.LOGLIKELIHOOD
@@ -141,6 +141,7 @@ class MedQA(Task):
                     output.extracted_answer = self.extract_answer(output)
 
     def extract_answer(self, output: LMOutput) -> str | None:
+        """Extract the last ``ANSWER: X`` letter from model output."""
         matches = list(_ANSWER_PATTERN.finditer(output.text))
         return matches[-1].group(1).upper() if matches else None
 
