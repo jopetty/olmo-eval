@@ -71,36 +71,49 @@ def get_model_presets() -> dict[str, ProviderConfig]:
         ),
         "gpt-4o": ProviderConfig(
             kind=ProviderKind.LITELLM,
-            model="openai/gpt-4o",
-            base_url="https://api.openai.com/v1",
+            model="gpt-4o",
+            api_base="https://api.openai.com/v1",
             required_secrets=("OPENAI_API_KEY",),
         ),
         "gpt-4o-mini": ProviderConfig(
             kind=ProviderKind.LITELLM,
             model="openai/gpt-4o-mini",
-            base_url="https://api.openai.com/v1",
+            api_base="https://api.openai.com/v1",
             required_secrets=("OPENAI_API_KEY",),
         ),
         "gpt-4-turbo": ProviderConfig(
             kind=ProviderKind.LITELLM,
             model="openai/gpt-4-turbo",
-            base_url="https://api.openai.com/v1",
+            api_base="https://api.openai.com/v1",
             required_secrets=("OPENAI_API_KEY",),
         ),
         "claude-3-opus": ProviderConfig(
             kind=ProviderKind.LITELLM,
             model="anthropic/claude-3-opus-20240229",
-            base_url="https://api.anthropic.com",
+            api_base="https://api.anthropic.com",
             required_secrets=("ANTHROPIC_API_KEY",),
         ),
         "claude-3-sonnet": ProviderConfig(
             kind=ProviderKind.LITELLM,
             model="anthropic/claude-3-sonnet-20240229",
-            base_url="https://api.anthropic.com",
+            api_base="https://api.anthropic.com",
             required_secrets=("ANTHROPIC_API_KEY",),
         ),
         "mock": ProviderConfig(
             kind=ProviderKind.MOCK,
             model="mock",
+        ),
+        # Ai2 deployed models on Litellm Proxy
+        "cirrascale-olmo-3-7b-instruct": ProviderConfig(
+            kind=ProviderKind.LITELLM,
+            model="litellm_proxy/openai/Olmo-3-7B-Instruct",
+            api_base="https://ai2-model-hub.allen.ai",
+            required_secrets=("LITELLM_PROXY_API_KEY",),
+        ),
+        "modal-olmo-3-7b-instruct": ProviderConfig(
+            kind=ProviderKind.LITELLM,
+            model="litellm_proxy/openai/ai2-release-partners/Olmo-3-7B-Instruct",
+            api_base="https://ai2-model-hub.allen.ai",
+            required_secrets=("LITELLM_PROXY_API_KEY",),
         ),
     }
