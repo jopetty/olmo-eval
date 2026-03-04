@@ -37,28 +37,47 @@ class SerializedTask(Task):
     """A task whose instances and requests come from a pre-serialized JSONL file.
 
     The JSONL file is loaded via the unified DataLoader (supports S3, local,
-    etc.).  Each line produces both an Instance (for scoring) and a cached
+    etc.).  Each line produces both an Instance (for scoring) and an
     LMRequest (returned by format_request without running any Formatter).
     """
+
+    _records_by_doc_id: dict[int, dict[str, Any]] | None = None
+
+    def _ensure_loaded(self) -> dict[int, dict[str, Any]]:
+        if self._records_by_doc_id is None:
+            loader = DataLoader()
+            source = self.config.get_data_source()
+            self._records_by_doc_id = {r["doc_id"]: r for r in loader.load(source)}
+        return self._records_by_doc_id
 
     @property
     def instances(self) -> Iterator[Instance]:
         yield from self._load_instances_cached()
 
     def _load_instances_cached(self, split: str | None = None) -> Iterator[Instance]:
-        if self._instances_cache is None:
-            self._instances_cache = list(self._load_serialized())
-        yield from self._instances_cache
+        if self._instances_cache is not None:
+            yield from self._instances_cache
+            return
 
-    def _load_serialized(self) -> Iterator[Instance]:
-        loader = DataLoader()
-        source = self.config.get_data_source()
-        for record in loader.load(source):
-            instance = _record_to_instance(record)
+        self._instances_cache = []
+        for record in self._ensure_loaded().values():
+            gold_answers: list[str] = record.get("gold_answers") or []
+            choices_raw = record.get("choices")
+            metadata: dict[str, Any] = dict(record.get("metadata") or {})
+            metadata["_doc_id"] = record["doc_id"]
+            instance = Instance(
+                question=record.get("question", ""),
+                gold_answer=gold_answers[0] if gold_answers else None,
+                choices=tuple(choices_raw) if choices_raw else None,
+                metadata=metadata,
+            )
+            self._instances_cache.append(instance)
             yield instance
 
     def format_request(self, instance: Instance) -> LMRequest:
-        record: dict[str, Any] = instance.metadata["_serialized"]
+        records = self._ensure_loaded()
+        doc_id: int = instance.metadata["_doc_id"]
+        record = records[doc_id]
         rt = _REQUEST_TYPE_MAP[record["request_type"]]
         return LMRequest(
             request_type=rt,
@@ -66,30 +85,6 @@ class SerializedTask(Task):
             messages=tuple(record["messages"]) if record.get("messages") else (),
             continuations=(tuple(record["continuations"]) if record.get("continuations") else None),
         )
-
-
-def _record_to_instance(record: dict[str, Any]) -> Instance:
-    """Convert a serialized JSONL record to an Instance.
-
-    The full record is stashed in metadata["_serialized"] so that
-    format_request can reconstruct the LMRequest without a Formatter.
-    """
-    gold_answers: list[str] = record.get("gold_answers") or []
-    gold_answer = gold_answers[0] if gold_answers else None
-
-    choices_raw = record.get("choices")
-    choices = tuple(choices_raw) if choices_raw else None
-
-    metadata: dict[str, Any] = dict(record.get("metadata") or {})
-    metadata["gold_answers"] = gold_answers
-    metadata["_serialized"] = record
-
-    return Instance(
-        question=record.get("question", ""),
-        gold_answer=gold_answer,
-        choices=choices,
-        metadata=metadata,
-    )
 
 
 # =============================================================================
