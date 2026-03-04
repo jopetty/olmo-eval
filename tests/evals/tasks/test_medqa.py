@@ -146,7 +146,31 @@ class TestExtractAnswer:
         output = LMOutput(text="ANSWER: A\nWait, actually ANSWER: C")
         assert task.extract_answer(output) == "C"
 
-    def test_no_answer_pattern_returns_none(self, task):
+    def test_boxed_letter(self, task):
+        output = LMOutput(text="Therefore...\n$$\\boxed{B}$$")
+        assert task.extract_answer(output) == "B"
+
+    def test_boxed_text(self, task):
+        output = LMOutput(text="$$\\boxed{\\text{A}}$$")
+        assert task.extract_answer(output) == "A"
+
+    def test_paren_letter(self, task):
+        output = LMOutput(text="**Final Answer:**\n**(C) Diabetes**")
+        assert task.extract_answer(output) == "C"
+
+    def test_last_paren_letter_wins(self, task):
+        output = LMOutput(text="Option (A) is wrong.\n\n**Answer: (D) Correct**")
+        assert task.extract_answer(output) == "D"
+
+    def test_answer_pattern_preferred_over_boxed(self, task):
+        output = LMOutput(text="\\boxed{A}\nANSWER: B")
+        assert task.extract_answer(output) == "B"
+
+    def test_boxed_preferred_over_paren(self, task):
+        output = LMOutput(text="(A) is likely\n$$\\boxed{C}$$")
+        assert task.extract_answer(output) == "C"
+
+    def test_no_pattern_returns_none(self, task):
         output = LMOutput(text="I think the answer is B")
         assert task.extract_answer(output) is None
 

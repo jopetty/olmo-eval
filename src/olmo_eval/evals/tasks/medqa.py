@@ -28,7 +28,10 @@ from olmo_eval.common.types import (
 from olmo_eval.data import DataLoader, DataSource
 from olmo_eval.evals.tasks.common import Task, register, register_variant
 
+# Patterns tried in order: explicit "ANSWER: X", LaTeX \boxed{X}, last (X)
 _ANSWER_PATTERN = re.compile(r"ANSWER\s*:\s*([A-Z])", re.IGNORECASE)
+_BOXED_PATTERN = re.compile(r"\\boxed\{(?:\\text\{)?([A-Z])")
+_PAREN_LETTER = re.compile(r"\(([A-Z])\)")
 
 _SYSTEM_PROMPT = """\
 You are a medical expert. Answer the following multiple choice question by \
@@ -141,9 +144,26 @@ class MedQA(Task):
                     output.extracted_answer = self.extract_answer(output)
 
     def extract_answer(self, output: LMOutput) -> str | None:
-        """Extract the last ``ANSWER: X`` letter from model output."""
-        matches = list(_ANSWER_PATTERN.finditer(output.text))
-        return matches[-1].group(1).upper() if matches else None
+        """Extract an MCQ letter from model output.
+
+        Tries patterns in order of specificity: ``ANSWER: X``, ``\\boxed{X}``,
+        then last ``(X)`` in the output.
+        """
+        text = output.text
+
+        matches = list(_ANSWER_PATTERN.finditer(text))
+        if matches:
+            return matches[-1].group(1).upper()
+
+        matches = list(_BOXED_PATTERN.finditer(text))
+        if matches:
+            return matches[-1].group(1).upper()
+
+        matches = list(_PAREN_LETTER.finditer(text))
+        if matches:
+            return matches[-1].group(1).upper()
+
+        return None
 
 
 register_variant("medqa", "mc", formatter=MultipleChoiceFormatter(), metrics=_DEFAULT_METRICS)
