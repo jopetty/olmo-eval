@@ -191,6 +191,8 @@ async def process_results(
             if traj_dict:
                 trajectory = AgentTrajectory.from_dict(traj_dict)
 
+        assert result_item.instance is not None
+        assert result_item.request is not None
         response = Response(
             instance=result_item.instance,
             request=result_item.request,

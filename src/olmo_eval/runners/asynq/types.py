@@ -84,8 +84,8 @@ class ResultItem:
     model_name: str  # Which model produced this result
     task_id: str
     instance_idx: int
-    instance: Instance
-    request: LMRequest
+    instance: Instance | None  # None only for fatal error signals
+    request: LMRequest | None  # None only for fatal error signals
     outputs: list[LMOutput]
     error: str | None = None
     attempt: int = 0
