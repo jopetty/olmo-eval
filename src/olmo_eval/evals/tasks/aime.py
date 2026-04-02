@@ -76,10 +76,11 @@ class AIME2025Task(AIMETask):
     years = [2025]
 
 
+# RL Zero uses slightly different defaults.
 _RLZERO_FORMATTER = ChatFormatter(user_template="{question}")
 
 _RLZERO_SAMPLING = SamplingParams(
-    max_tokens=32768,
+    max_tokens=16384,
     temperature=1.0,
     top_p=0.95,
     num_samples=32,
