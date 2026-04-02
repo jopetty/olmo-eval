@@ -9,8 +9,6 @@ from olmo_eval.data import DataSource
 from olmo_eval.evals.tasks.common import register, register_variant
 from olmo_eval.evals.tasks.minerva_math import MinervaMathTask
 
-ZS_COT_R1_SYSTEM_PROMPT = "Please reason step by step, and put your final answer within \\boxed{}."
-
 _PASS_AT_32_METRICS = (
     AccuracyMetric(scorer=MinervaMathScorer),
     PassAtKMetric(k=1, scorer=MinervaMathScorer),
@@ -27,9 +25,10 @@ _PASS_AT_32_SAMPLING = SamplingParams(
     num_samples=32,
 )
 
-_PASS_AT_32_R1_FORMATTER = ChatFormatter(
-    system_prompt=ZS_COT_R1_SYSTEM_PROMPT,
-    user_template="{question}",
+_COT_SUFFIX = "\nPlease reason step by step, and put your final answer within \\boxed{}."
+
+_PASS_AT_32_FORMATTER = ChatFormatter(
+    user_template="{question}" + _COT_SUFFIX,
 )
 
 
@@ -81,7 +80,7 @@ for _year in (2024, 2025):
     register_variant(
         f"aime_{_year}",
         "pass_at_32",
-        formatter=_PASS_AT_32_R1_FORMATTER,
+        formatter=_PASS_AT_32_FORMATTER,
         metrics=_PASS_AT_32_METRICS,
         primary_metric=_PASS_AT_32_METRICS[1],
         sampling_params=_PASS_AT_32_SAMPLING,
