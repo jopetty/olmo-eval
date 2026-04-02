@@ -4,10 +4,10 @@ from typing import Any
 from olmo_eval.common.formatters import ChatFormatter
 from olmo_eval.common.metrics import AccuracyMetric, PassAtKMetric
 from olmo_eval.common.scorers import MinervaMathScorer
-from olmo_eval.common.types import Instance, LMOutput, LMRequest, SamplingParams
+from olmo_eval.common.types import Instance, SamplingParams
 from olmo_eval.data import DataSource
-from olmo_eval.evals.extract import MathExtractor
-from olmo_eval.evals.tasks.common import Task, register, register_variant
+from olmo_eval.evals.tasks.common import register, register_variant
+from olmo_eval.evals.tasks.minerva_math import MinervaMathTask
 
 ZS_COT_R1_SYSTEM_PROMPT = "Please reason step by step, and put your final answer within \\boxed{}."
 
@@ -33,13 +33,12 @@ _PASS_AT_32_R1_FORMATTER = ChatFormatter(
 )
 
 
-class AIMETask(Task):
+class AIMETask(MinervaMathTask):
     data_source = DataSource(path="allenai/aime-2021-2025")
     formatter = ChatFormatter(user_template="{question}")
     metrics = (AccuracyMetric(scorer=MinervaMathScorer),)
     num_fewshot = 0
     sampling_params = SamplingParams(max_tokens=16384, temperature=0.0)
-    dependencies = ["lark>=1.0"]
 
     years: list[int]
 
@@ -54,8 +53,6 @@ class AIMETask(Task):
 
         question = doc["problem"]
         gold_answer = str(doc["answer"])
-
-        # AIME answers are integers 0-999; normalize by stripping leading zeros
         gold_normalized = gold_answer.lstrip("0") or "0"
 
         return Instance(
@@ -69,15 +66,6 @@ class AIMETask(Task):
             },
         )
 
-    def format_request(self, instance: Instance) -> LMRequest:
-        assert self.config.formatter is not None
-        return self.config.formatter.format(instance, self.get_fewshot())
-
-    def extract_answer(self, output: LMOutput) -> str | None:
-        answers = MathExtractor.extract_answer(output.text)
-        output.metadata["all_extracted_answers"] = answers if answers else []
-        return answers[0] if answers else None
-
 
 @register("aime_2024")
 class AIME2024Task(AIMETask):
@@ -89,12 +77,12 @@ class AIME2025Task(AIMETask):
     years = [2025]
 
 
-for _year in ("2024", "2025"):
+for _year in (2024, 2025):
     register_variant(
         f"aime_{_year}",
         "pass_at_32",
         formatter=_PASS_AT_32_R1_FORMATTER,
         metrics=_PASS_AT_32_METRICS,
-        primary_metric=PassAtKMetric(k=1, scorer=MinervaMathScorer),
+        primary_metric=_PASS_AT_32_METRICS[1],
         sampling_params=_PASS_AT_32_SAMPLING,
     )
