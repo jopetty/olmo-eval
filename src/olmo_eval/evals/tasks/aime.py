@@ -4,7 +4,7 @@ from typing import Any
 from olmo_eval.common.formatters import ChatFormatter
 from olmo_eval.common.metrics import AccuracyMetric, PassAtKMetric
 from olmo_eval.common.scorers import MinervaMathScorer
-from olmo_eval.common.types import Instance, SamplingParams
+from olmo_eval.common.types import Instance, SamplingParams, Split
 from olmo_eval.data import DataSource
 from olmo_eval.evals.tasks.common import register, register_variant
 from olmo_eval.evals.tasks.minerva_math import MinervaMathTask
@@ -34,6 +34,7 @@ _PASS_AT_32_FORMATTER = ChatFormatter(
 
 class AIMETask(MinervaMathTask):
     data_source = DataSource(path="allenai/aime-2021-2025")
+    split = Split.TRAIN  # HF dataset only has a train split
     formatter = ChatFormatter(user_template="{question}")
     metrics = (AccuracyMetric(scorer=MinervaMathScorer),)
     num_fewshot = 0
