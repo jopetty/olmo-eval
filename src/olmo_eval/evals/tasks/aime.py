@@ -53,7 +53,8 @@ class AIMETask(MinervaMathTask):
 
         question = doc["problem"]
         gold_answer = str(doc["answer"])
-        # AIME data stores answer with leading zeros, strip them, fall back to 0 if the answer was just 0
+        # AIME data stores answer with leading zeros, strip them,
+        # fall back to 0 if the answer was just 0
         gold_normalized = gold_answer.lstrip("0") or "0"
 
         return Instance(
