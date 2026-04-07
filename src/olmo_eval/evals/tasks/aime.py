@@ -9,14 +9,14 @@ from olmo_eval.data import DataSource
 from olmo_eval.evals.tasks.common import register, register_variant
 from olmo_eval.evals.tasks.minerva_math import MinervaMathTask
 
-_PASS_AT_32_METRICS = (
-    AccuracyMetric(scorer=MinervaMathScorer),
-    PassAtKMetric(k=1, scorer=MinervaMathScorer),
-    PassAtKMetric(k=4, scorer=MinervaMathScorer),
-    PassAtKMetric(k=8, scorer=MinervaMathScorer),
-    PassAtKMetric(k=16, scorer=MinervaMathScorer),
-    PassAtKMetric(k=32, scorer=MinervaMathScorer),
-)
+_PASS_AT_32_METRICS = {
+    "acc": AccuracyMetric(scorer=MinervaMathScorer),
+    "k1": PassAtKMetric(k=1, scorer=MinervaMathScorer),
+    "k4": PassAtKMetric(k=4, scorer=MinervaMathScorer),
+    "k8": PassAtKMetric(k=8, scorer=MinervaMathScorer),
+    "k16": PassAtKMetric(k=16, scorer=MinervaMathScorer),
+    "k32": PassAtKMetric(k=32, scorer=MinervaMathScorer),
+}
 
 _PASS_AT_32_SAMPLING = SamplingParams(
     max_tokens=32768,
@@ -40,7 +40,7 @@ class AIMETask(MinervaMathTask):
     num_fewshot = 0
     sampling_params = SamplingParams(max_tokens=32768, temperature=0.0)
 
-    years: list[int]
+    years: tuple[int, ...]
 
     @property
     def instances(self) -> Iterator[Instance]:
@@ -53,6 +53,7 @@ class AIMETask(MinervaMathTask):
 
         question = doc["problem"]
         gold_answer = str(doc["answer"])
+        # AIME data stores answer with leading zeros, strip them, fall back to 0 if the answer was just 0
         gold_normalized = gold_answer.lstrip("0") or "0"
 
         return Instance(
@@ -69,12 +70,12 @@ class AIMETask(MinervaMathTask):
 
 @register("aime_2024")
 class AIME2024Task(AIMETask):
-    years = [2024]
+    years = (2024,)
 
 
 @register("aime_2025")
 class AIME2025Task(AIMETask):
-    years = [2025]
+    years = (2025,)
 
 
 # RL Zero uses slightly different defaults.
@@ -92,8 +93,8 @@ for _year in (2024, 2025):
         f"aime_{_year}",
         "pass_at_32",
         formatter=_PASS_AT_32_FORMATTER,
-        metrics=_PASS_AT_32_METRICS,
-        primary_metric=_PASS_AT_32_METRICS[1],
+        metrics=tuple(_PASS_AT_32_METRICS.values()),
+        primary_metric=_PASS_AT_32_METRICS["k1"],
         sampling_params=_PASS_AT_32_SAMPLING,
     )
 
@@ -101,7 +102,7 @@ for _year in (2024, 2025):
         f"aime_{_year}",
         "pass_at_32_rlzero",
         formatter=_RLZERO_FORMATTER,
-        metrics=_PASS_AT_32_METRICS,
-        primary_metric=_PASS_AT_32_METRICS[1],
+        metrics=tuple(_PASS_AT_32_METRICS.values()),
+        primary_metric=_PASS_AT_32_METRICS["k1"],
         sampling_params=_RLZERO_SAMPLING,
     )
