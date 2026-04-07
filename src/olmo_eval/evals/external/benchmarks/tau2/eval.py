@@ -137,7 +137,9 @@ class Tau2ExternalEval(SandboxedExternalEval):
             # 1) The assistant returning an empty response.
             # 2) Litellm's timeouts errors.
             f"git clone --depth 1 https://github.com/pdasigi/tau2-bench-verified.git {repo}",
-            f"cd {repo} && uv sync",
+            # Pin to commit 6a0dbca
+            f"cd {repo} && git checkout 6a0dbca",
+            "uv sync",
             f"mkdir -p {self.results_dir}",
         )
 
