@@ -82,13 +82,24 @@ def register_variant(task_name: str, variant: str, **overrides: Any) -> None:
         **overrides: TaskConfig field overrides for this variant.
 
     Raises:
-        ValueError: If the task is not registered.
+        ValueError: If the task is not registered, or if the resulting task
+            spec collides with a registered suite name.
     """
     if task_name not in _tasks:
         raise ValueError(
             f"Cannot register variant '{variant}' for unknown task '{task_name}'. "
             f"Register the task first using @register()."
         )
+
+    from olmo_eval.evals.suites.registry import suite_exists
+
+    spec = f"{task_name}:{variant}"
+    if suite_exists(spec):
+        raise ValueError(
+            f"Task spec {spec!r} collides with a registered suite name. "
+            f"Rename the suite to avoid ambiguity."
+        )
+
     _variants.setdefault(task_name, {})[variant] = overrides
 
 
@@ -363,16 +374,39 @@ def list_regimes(task_name: str | None = None) -> dict[str, list[str]]:
 
 
 def task_exists(spec: str) -> bool:
-    """Check if a task spec is valid (task exists).
+    """Check if a task spec is valid (task exists and variants are registered).
+
+    Handles task names containing colons (e.g., "naturalqs:mc") by trying
+    progressively shorter prefixes, matching the logic in get_task().
 
     Args:
         spec: Task specification string.
 
     Returns:
-        True if the base task exists, False otherwise.
+        True if the task exists and all variants are valid, False otherwise.
     """
-    task_name, _variants, _overrides = parse_task_spec(spec)
-    return task_name in _tasks
+    parts = spec.split(":")
+    task_name = None
+    variants: list[str] = []
+
+    for i in range(len(parts), 0, -1):
+        candidate = ":".join(parts[:i])
+        if candidate in _tasks:
+            task_name = candidate
+            variants = [v for v in parts[i:] if v]
+            break
+
+    if task_name is None:
+        return False
+
+    # Also validate variants exist
+    for variant in variants:
+        has_variant = task_name in _variants and variant in _variants[task_name]
+        has_regime = task_name in _regimes and variant in _regimes[task_name]
+        if not has_variant and not has_regime:
+            return False
+
+    return True
 
 
 def clear_registry() -> None:

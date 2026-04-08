@@ -280,14 +280,22 @@ class PassAtKMetric(Metric):
             return 0.0
 
         scorer_name = self.scorer().name
+        score_key = f"score:{scorer_name}"
 
-        # Group by task ID
+        # Group per-output scores by task ID
         task_results: dict[str, list[float]] = {}
         for r in responses:
             task_id = r.instance.metadata.get("id", "unknown")
             if task_id not in task_results:
                 task_results[task_id] = []
-            task_results[task_id].append(r.scores.get(scorer_name, 0.0))
+            # Use per-output scores stored during scoring (one score per sample)
+            for output in r.outputs:
+                if output.metadata and score_key in output.metadata:
+                    task_results[task_id].append(output.metadata[score_key])
+                else:
+                    # Fallback: single-sample response, use response-level score
+                    task_results[task_id].append(r.scores.get(scorer_name, 0.0))
+                    break
 
         # Compute pass@k for each task
         pass_at_k_values = []
@@ -319,14 +327,22 @@ class PassPowKMetric(Metric):
             return 0.0
 
         scorer_name = self.scorer().name
+        score_key = f"score:{scorer_name}"
 
-        # Group by task ID
+        # Group per-output scores by task ID
         task_results: dict[str, list[float]] = {}
         for r in responses:
             task_id = r.instance.metadata.get("id", "unknown")
             if task_id not in task_results:
                 task_results[task_id] = []
-            task_results[task_id].append(r.scores.get(scorer_name, 0.0))
+            # Use per-output scores stored during scoring (one score per sample)
+            for output in r.outputs:
+                if output.metadata and score_key in output.metadata:
+                    task_results[task_id].append(output.metadata[score_key])
+                else:
+                    # Fallback: single-sample response, use response-level score
+                    task_results[task_id].append(r.scores.get(scorer_name, 0.0))
+                    break
 
         # Compute pass^k for each task
         pass_pow_k_values = []
@@ -394,6 +410,39 @@ class LogprobPerCharMCAccuracyMetric(Metric):
                 num_chars = max(len(o.text) if o.text else 0, 1)
                 logprob_per_char.append(total_logprob / num_chars)
             if logprob_per_char.index(max(logprob_per_char)) == gold_idx:
+                correct += 1
+        return correct / len(responses)
+
+
+@dataclass(frozen=True, slots=True)
+class LogprobPerTokenMCAccuracyMetric(Metric):
+    """Multiple-choice accuracy via token-length-normalized logprob argmax.
+
+    For each continuation, divides the total logprob by the number of tokens,
+    then picks the continuation with the highest normalized logprob. Checks
+    whether its index matches ``instance.metadata["gold_idx"]``.
+
+    This matches the ``acc_per_token`` metric from oe-eval-internal's MCAccuracy.
+    """
+
+    name: str = "accuracy"
+    scorer: type[Scorer] = LogprobScorer
+
+    def compute(self, responses: Sequence[Response]) -> float:
+        if not responses:
+            return 0.0
+        scorer = self.scorer()
+        correct = 0
+        for response in responses:
+            gold_idx = response.instance.metadata.get("gold_idx")
+            if gold_idx is None or not response.outputs:
+                continue
+            logprob_per_token = []
+            for o in response.outputs:
+                total_logprob = scorer.score(response.instance, o)
+                num_tokens = max(len(o.logprobs) if o.logprobs else 0, 1)
+                logprob_per_token.append(total_logprob / num_tokens)
+            if logprob_per_token.index(max(logprob_per_token)) == gold_idx:
                 correct += 1
         return correct / len(responses)
 
