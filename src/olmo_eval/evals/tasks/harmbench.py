@@ -95,6 +95,32 @@ class Harmbench(Task):
             for output in response.outputs:
                 output.extracted_answer = extract_think_answer(self.extract_answer(output))
 
+    # Override default to allow for averages across subsets
+    def compute_metrics(self, responses: Sequence[Response]) -> dict[str, dict[str, float]]:
+        """Compute all metrics from scored responses.
+
+        Returns metrics in nested structure: {metric_name: {scorer_name: score}}.
+        This allows multiple scorers to produce the same metric (e.g., accuracy)
+        while preserving which scorer produced which value.
+        """
+
+        result: dict[str, dict[str, float]] = {}
+        for metric in self.config.metrics:
+            scorer_name = (
+                metric.scorer().name if hasattr(metric, "scorer") and metric.scorer else "default"
+            )
+            if metric.name not in result:
+                result[metric.name] = {}
+
+            result[metric.name][scorer_name] = metric.compute(responses)
+
+            # Compute metrics for Functional Category subsets
+            result[metric.name + " Cat"][scorer_name] = metric.compute(responses)
+            print(responses)
+            # Compute metrics for Semanitic Category subsets
+
+        return result
+
 
 # =============================================================================
 # Variant Registrations
