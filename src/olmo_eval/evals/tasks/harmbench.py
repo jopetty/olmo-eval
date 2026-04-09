@@ -90,7 +90,7 @@ class Harmbench(Task):
 
     def _extract_answers(self, responses: Sequence[Response]) -> None:
         """Extract the answers from model. Reasoning logic from oe-eval"""
-        print(self.config["name"])
+        print(self.config.name)
         for response in responses:
             for output in response.outputs:
                 output.extracted_answer = extract_think_answer(self.extract_answer(output))
