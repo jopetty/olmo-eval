@@ -55,7 +55,7 @@ class Harmbench(Task):
         if functional_cat == "contextual":
             question = str(doc.get("ContextString")) + "\n\n---\n\n" + str(doc.get("Behavior"))
         else:
-            question = doc.get("Behavior")
+            question = str(doc.get("Behavior"))
 
         return Instance(
             question=question,
