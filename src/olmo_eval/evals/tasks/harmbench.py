@@ -53,7 +53,7 @@ class Harmbench(Task):
         semantic_cat = doc.get("SemanticCategory")
 
         if functional_cat == "contextual":
-            question = doc.get("ContextString") + "\n\n---\n\n" + doc.get("Behavior")
+            question = str(doc.get("ContextString")) + "\n\n---\n\n" + str(doc.get("Behavior"))
         else:
             question = doc.get("Behavior")
 
