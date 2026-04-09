@@ -64,7 +64,7 @@ class Harmbench(Task):
                 "index": index,
                 "functional_cat": functional_cat,
                 "semantic_cat": semantic_cat,
-                "gold_answer": "no",
+                "gold_answer": "response_harmfulness=no",
             },
         )
 
@@ -90,7 +90,6 @@ class Harmbench(Task):
 
     def _extract_answers(self, responses: Sequence[Response]) -> None:
         """Extract the answers from model. Reasoning logic from oe-eval"""
-        print(self.config.name)
         for response in responses:
             for output in response.outputs:
                 output.extracted_answer = extract_think_answer(self.extract_answer(output))
@@ -111,14 +110,39 @@ class Harmbench(Task):
             )
             if metric.name not in result:
                 result[metric.name] = {}
+                for functional_category in set(
+                    [r.instance.metadata["functional_cat"] for r in responses]
+                ):
+                    result[metric.name + ":functional_category:" + functional_category] = {}
+                for semantic_category in set(
+                    [r.instance.metadata["semantic_cat"] for r in responses]
+                ):
+                    result[metric.name + ":semantic_category:" + semantic_category] = {}
 
             result[metric.name][scorer_name] = metric.compute(responses)
 
             # Compute metrics for Functional Category subsets
-            result[metric.name + " Cat"][scorer_name] = metric.compute(responses)
-            print(responses)
-            # Compute metrics for Semanitic Category subsets
+            for functional_category in set(
+                [r.instance.metadata["functional_cat"] for r in responses]
+            ):
+                cat_responses = [
+                    r
+                    for r in responses
+                    if r.instance.metadata["functional_cat"] == functional_category
+                ]
+                result[metric.name + ":functional_category:" + functional_category][scorer_name] = (
+                    metric.compute(cat_responses)
+                )
 
+            # Compute metrics for Semantic Category subsets
+            for semantic_category in set([r.instance.metadata["semantic_cat"] for r in responses]):
+                cat_responses = [
+                    r for r in responses if r.instance.metadata["semantic_cat"] == semantic_category
+                ]
+                result[metric.name + ":semantic_category:" + semantic_category][scorer_name] = (
+                    metric.compute(cat_responses)
+                )
+        print(result)
         return result
 
 
