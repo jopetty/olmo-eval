@@ -13,7 +13,7 @@ from collections.abc import Iterator, Sequence
 from typing import Any
 
 from olmo_eval.common.formatters import ChatFormatter
-from olmo_eval.common.metrics import AccuracyMetric
+from olmo_eval.common.metrics import AccuracyMetric, SubsetAccuracyMetric
 from olmo_eval.common.scorers import SafetyScorer
 from olmo_eval.common.types import Instance, LMRequest, RequestType, Response, SamplingParams
 from olmo_eval.data import DataLoader, DataSource
@@ -62,8 +62,8 @@ class Harmbench(Task):
             metadata={
                 "id": doc.get("BehaviorID"),
                 "index": index,
-                "functional_cat": functional_cat,
-                "semantic_cat": semantic_cat,
+                "functional_category": functional_cat,
+                "semantic_category": semantic_cat,
                 "gold_answer": "response_harmfulness=no",
             },
         )
@@ -94,57 +94,6 @@ class Harmbench(Task):
             for output in response.outputs:
                 output.extracted_answer = extract_think_answer(self.extract_answer(output))
 
-    # Override default to allow for averages across subsets
-    def compute_metrics(self, responses: Sequence[Response]) -> dict[str, dict[str, float]]:
-        """Compute all metrics from scored responses.
-
-        Returns metrics in nested structure: {metric_name: {scorer_name: score}}.
-        This allows multiple scorers to produce the same metric (e.g., accuracy)
-        while preserving which scorer produced which value.
-        """
-
-        result: dict[str, dict[str, float]] = {}
-        for metric in self.config.metrics:
-            scorer_name = (
-                metric.scorer().name if hasattr(metric, "scorer") and metric.scorer else "default"
-            )
-            if metric.name not in result:
-                result[metric.name] = {}
-                for functional_category in set(
-                    [r.instance.metadata["functional_cat"] for r in responses]
-                ):
-                    result[metric.name + ":functional_category:" + functional_category] = {}
-                for semantic_category in set(
-                    [r.instance.metadata["semantic_cat"] for r in responses]
-                ):
-                    result[metric.name + ":semantic_category:" + semantic_category] = {}
-
-            result[metric.name][scorer_name] = metric.compute(responses)
-
-            # Compute metrics for Functional Category subsets
-            for functional_category in set(
-                [r.instance.metadata["functional_cat"] for r in responses]
-            ):
-                cat_responses = [
-                    r
-                    for r in responses
-                    if r.instance.metadata["functional_cat"] == functional_category
-                ]
-                result[metric.name + ":functional_category:" + functional_category][scorer_name] = (
-                    metric.compute(cat_responses)
-                )
-
-            # Compute metrics for Semantic Category subsets
-            for semantic_category in set([r.instance.metadata["semantic_cat"] for r in responses]):
-                cat_responses = [
-                    r for r in responses if r.instance.metadata["semantic_cat"] == semantic_category
-                ]
-                result[metric.name + ":semantic_category:" + semantic_category][scorer_name] = (
-                    metric.compute(cat_responses)
-                )
-        print(result)
-        return result
-
 
 # =============================================================================
 # Variant Registrations
@@ -153,6 +102,22 @@ class Harmbench(Task):
 # Judge variant - uses LLM-as-judge scoring for factual accuracy
 register_variant(
     "harmbench",
-    "openai",
-    metrics=(AccuracyMetric(scorer=SafetyScorer),),
+    "judge",
+    metrics=(
+        AccuracyMetric(scorer=SafetyScorer),
+        SubsetAccuracyMetric(name="functional_category::standard", scorer=SafetyScorer),
+        SubsetAccuracyMetric(name="functional_category::contextual", scorer=SafetyScorer),
+        SubsetAccuracyMetric(name="functional_category::copyright", scorer=SafetyScorer),
+        SubsetAccuracyMetric(name="semantic_category::copyright", scorer=SafetyScorer),
+        SubsetAccuracyMetric(
+            name="semantic_category::misinformation_disinformation", scorer=SafetyScorer
+        ),
+        SubsetAccuracyMetric(name="semantic_category::chemical_biological", scorer=SafetyScorer),
+        SubsetAccuracyMetric(name="semantic_category::illegal", scorer=SafetyScorer),
+        SubsetAccuracyMetric(name="semantic_category::harmful", scorer=SafetyScorer),
+        SubsetAccuracyMetric(name="semantic_category::cybercrime_intrusion", scorer=SafetyScorer),
+        SubsetAccuracyMetric(name="semantic_category::harassment_bullying", scorer=SafetyScorer),
+    ),
+    primary_metric=AccuracyMetric(scorer=SafetyScorer),
+    sampling_params=SamplingParams(max_tokens=512, temperature=0.6, top_p=0.95),
 )

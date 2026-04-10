@@ -12,6 +12,7 @@ from olmo_eval.common.scorers import (
     F1Scorer,
     LogprobScorer,
     PerplexityScorer,
+    SafetyScorer,
     Scorer,
     SQuADF1Scorer,
     SubstringRecallScorer,
@@ -437,3 +438,35 @@ class CorpusPerplexityMetric(Metric):
 
         avg_logprob = total_logprob / total_tokens
         return math.exp(-avg_logprob)
+
+
+@dataclass(frozen=True, slots=True)
+class SubsetAccuracyMetric(Metric):
+    """
+    Calculates the accuracy across responses for a given
+    subset. For use to avoid double calculation in cases
+    where a single instance might belong to multiple subsets
+    """
+
+    # defaults to all responses
+    # expected format is subset_name::subset_value ie functional_category::copyright
+    name: str = "any::any"
+    scorer: type[Scorer] = SafetyScorer
+
+    def compute(self, responses: Sequence[Response]) -> float:
+        """Compute aggregate metric from scored responses."""
+        if not responses:
+            return 0.0
+        scorer_name = self.scorer().name
+
+        if self.name == "any::any":
+            total = sum(r.scores.get(scorer_name, 0.0) for r in responses)
+            return total / len(responses)
+
+        subset, cat = self.name.split("::")
+        subset_responses = []
+        for r in responses:
+            if r.instance.metadata[subset] == cat:
+                subset_responses.append(r.scores.get(scorer_name, 0.0))
+
+        return sum(subset_responses) / len(subset_responses) if subset_responses else -1
