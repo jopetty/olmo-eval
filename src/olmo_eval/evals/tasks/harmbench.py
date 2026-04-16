@@ -127,11 +127,13 @@ register_variant(
     sampling_params=_JUDGE_SAMPLING,
 )
 
-# Local judge variant - uses a local auxiliary provider (auxiliary_providers.safety_judge)
+# Wildguard judge variant - uses a local auxiliary provider (auxiliary_providers.wg_judge)
+_WG_SCORER = SafetyScorer(provider_name="wg_judge", judge_format="wildguard")
+
 register_variant(
     "harmbench",
-    "local_judge",
-    metrics=_safety_metrics(SafetyScorer(provider_name="safety_judge")),
-    primary_metric=AccuracyMetric(scorer=SafetyScorer(provider_name="safety_judge")),
+    "wg_judge",
+    metrics=_safety_metrics(_WG_SCORER),
+    primary_metric=AccuracyMetric(scorer=_WG_SCORER),
     sampling_params=_JUDGE_SAMPLING,
 )
