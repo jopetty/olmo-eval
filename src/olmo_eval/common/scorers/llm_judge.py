@@ -13,7 +13,7 @@ from typing import Any, ClassVar, Literal
 
 from olmo_eval.common.execution import ScoringContext
 from olmo_eval.common.scorers.execution import ContextScorer
-from olmo_eval.common.types import Instance, LMOutput
+from olmo_eval.common.types import Instance, LMOutput, RequestType
 
 logger = logging.getLogger(__name__)
 
@@ -202,24 +202,18 @@ class LLMJudgeScorer(ContextScorer):
         context: ScoringContext,
         temperature: float = 0.0,
         max_tokens: int = 10,
-        completion: bool = False,
+        request_type: RequestType = RequestType.CHAT,
     ) -> str:
-        """Score using configured provider from inference pool.
-
-        Args:
-            completion: If True, send as a raw completion (for prompts that
-                already include chat template tokens).  Otherwise send as a
-                chat message.
-        """
+        """Score using configured provider from inference pool."""
         if self.provider_name is None:
             raise RuntimeError("provider_name is required for provider-based scoring.")
         if context.inference_pool is None:
             raise RuntimeError("No inference pool configured.")
 
-        from olmo_eval.common.types import LMRequest, RequestType, SamplingParams
+        from olmo_eval.common.types import LMRequest, SamplingParams
 
         provider = context.get_provider(self.provider_name)
-        if completion:
+        if request_type == RequestType.COMPLETION:
             request = LMRequest(request_type=RequestType.COMPLETION, prompt=prompt)
         else:
             request = LMRequest(
@@ -414,6 +408,7 @@ class SafetyScorer(LLMJudgeScorer):
 
     name: ClassVar[str] = "safety_judge"
     judge_format: str = "standard"
+    judge_request_type: RequestType = RequestType.CHAT
     persist_judge_response: bool = True
     judge_fn: JudgeFn = field(
         default_factory=lambda: build_openai_judge_fn(
@@ -530,7 +525,7 @@ class SafetyScorer(LLMJudgeScorer):
                 prompt,
                 context,
                 max_tokens=128,
-                completion=self.judge_format == "wildguard",
+                request_type=self.judge_request_type,
             )
         else:
             response = await self._score_with_judge_fn(prompt)

@@ -128,7 +128,11 @@ register_variant(
 )
 
 # Wildguard judge variant - uses a local auxiliary provider (auxiliary_providers.wg_judge)
-_WG_SCORER = SafetyScorer(provider_name="wg_judge", judge_format="wildguard")
+_WG_SCORER = SafetyScorer(
+    provider_name="wg_judge",
+    judge_format="wildguard",
+    judge_request_type=RequestType.COMPLETION,
+)
 
 register_variant(
     "harmbench",
