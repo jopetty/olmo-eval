@@ -717,7 +717,7 @@ class BeakerLauncher:
             )
             steps.append(
                 f'VIRTUAL_ENV={vllm_venv} uv pip install --cache-dir "$UV_CACHE_DIR" '
-                f"--upgrade --no-deps "
+                f"--upgrade "
                 f"'transformers @ git+https://github.com/huggingface/transformers.git@main'"
             )
             # Set VLLM_PYTHON so VLLMServerProcess uses the isolated venv
