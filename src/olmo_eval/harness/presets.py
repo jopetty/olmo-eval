@@ -198,7 +198,7 @@ class HarnessPresets:
         /workspace/scicode_test_data.h5 (the path SciCodeExecutionScorer expects).
 
         Requires the cluster to have weka mounted and
-        /weka/oe-eval-default/scicode/test_data.h5 to be populated.
+        /weka/oe-eval-default/finbarrt/scicode/test_data.h5 to be populated.
         """
         from .sandbox import Capability, SandboxConfig, SandboxMode
 
@@ -223,7 +223,7 @@ class HarnessPresets:
                     ),
                     volumes=(
                         (
-                            "/weka/oe-eval-default/scicode/test_data.h5",
+                            "/weka/oe-eval-default/finbarrt/scicode/test_data.h5",
                             "/workspace/scicode_test_data.h5",
                         ),
                     ),
