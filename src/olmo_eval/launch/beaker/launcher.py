@@ -640,6 +640,7 @@ class BeakerLauncher:
         setup_store_secrets: bool = False,
         vllm_isolated_venv: bool = False,
         setup_modal_gcp_secret: bool = False,
+        vllm_preinstalled: bool = False,
     ) -> str:
         """Build installation command for gantry's install_cmd parameter.
 
@@ -700,28 +701,33 @@ class BeakerLauncher:
         constraints = "/tmp/cuda-constraints.txt"
         steps.append(f"uv pip freeze -q | grep -E '^(torch|nvidia-)' > {constraints}")
 
-        # Install vLLM in isolated venv when requested (for server mode)
+        # Install vLLM in isolated venv when requested (for server mode).
+        # If the image was built with vLLM pre-installed (runtime-sandbox-vllm
+        # target) we skip the install and just point VLLM_PYTHON at the baked venv.
         if use_isolated_vllm_venv:
             vllm_venv = "/opt/vllm-venv"
-            steps.append(f"uv venv {vllm_venv}")
-            # Symlink torch and nvidia packages from main venv (already installed)
-            steps.append(
-                f"for pkg in /opt/venv/lib/python*/site-packages/torch* "
-                f"/opt/venv/lib/python*/site-packages/nvidia*; do "
-                f'ln -sf "$pkg" {vllm_venv}/lib/python*/site-packages/; done'
-            )
-            # Install vLLM extra from project (no torch constraint - it's symlinked)
-            steps.append(
-                f"cd /gantry-runtime && VIRTUAL_ENV={vllm_venv} uv pip install "
-                f"--cache-dir \"$UV_CACHE_DIR\" -e '.[vllm]'"
-            )
-            steps.append(
-                f'VIRTUAL_ENV={vllm_venv} uv pip install --cache-dir "$UV_CACHE_DIR" '
-                f"--upgrade "
-                f"'transformers @ git+https://github.com/huggingface/transformers.git@main'"
-            )
-            # Set VLLM_PYTHON so VLLMServerProcess uses the isolated venv
-            steps.append(f"export VLLM_PYTHON={vllm_venv}/bin/python")
+            if vllm_preinstalled:
+                steps.append(f"export VLLM_PYTHON={vllm_venv}/bin/python")
+            else:
+                steps.append(f"uv venv {vllm_venv}")
+                # Symlink torch and nvidia packages from main venv (already installed)
+                steps.append(
+                    f"for pkg in /opt/venv/lib/python*/site-packages/torch* "
+                    f"/opt/venv/lib/python*/site-packages/nvidia*; do "
+                    f'ln -sf "$pkg" {vllm_venv}/lib/python*/site-packages/; done'
+                )
+                # Install vLLM extra from project (no torch constraint - it's symlinked)
+                steps.append(
+                    f"cd /gantry-runtime && VIRTUAL_ENV={vllm_venv} uv pip install "
+                    f"--cache-dir \"$UV_CACHE_DIR\" -e '.[vllm]'"
+                )
+                steps.append(
+                    f'VIRTUAL_ENV={vllm_venv} uv pip install --cache-dir "$UV_CACHE_DIR" '
+                    f"--upgrade "
+                    f"'transformers @ git+https://github.com/huggingface/transformers.git@main'"
+                )
+                # Set VLLM_PYTHON so VLLMServerProcess uses the isolated venv
+                steps.append(f"export VLLM_PYTHON={vllm_venv}/bin/python")
 
         # Install main package (without vllm extra only when using isolated venv)
         main_extras = [e for e in extras if e != "vllm"] if use_isolated_vllm_venv else list(extras)
@@ -777,6 +783,11 @@ class BeakerLauncher:
         if "UV_CACHE_DIR" in config.env_vars:
             env_exports["UV_CACHE_DIR"] = config.env_vars["UV_CACHE_DIR"]
 
+        # Images whose tag ends with "-vllm" (e.g. the runtime-sandbox-vllm target
+        # in Dockerfile) already have /opt/vllm-venv populated; skip the runtime
+        # install in that case.
+        vllm_preinstalled = config.beaker_image.endswith("-vllm")
+
         # Build separate install command for gantry's install_cmd parameter
         install_cmd = self._build_install_cmd(
             config.extras,
@@ -788,6 +799,7 @@ class BeakerLauncher:
             config.setup_store_secrets,
             config.vllm_isolated_venv,
             config.setup_modal_gcp_secret,
+            vllm_preinstalled,
         )
 
         # Build weka mounts as tuples: (bucket, mount_path)

@@ -29,6 +29,7 @@ PYTHON_VERSION="3.12"
 PLATFORM=""
 NO_CACHE=""
 BUILD_SANDBOX=""
+BUILD_VLLM=""
 TARGET="runtime"
 
 # Parse arguments
@@ -66,6 +67,12 @@ while [[ $# -gt 0 ]]; do
             TARGET="runtime-sandbox"
             shift
             ;;
+        --with-vllm)
+            BUILD_VLLM="1"
+            BUILD_SANDBOX="1"
+            TARGET="runtime-sandbox-vllm"
+            shift
+            ;;
         --help)
             echo "Usage: $0 [OPTIONS]"
             echo ""
@@ -78,6 +85,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --platform PLATFORM   Target platform (default: auto-detect)"
             echo "                        Options: linux/amd64, linux/arm64"
             echo "  --sandbox             Build runtime-sandbox target with Podman support"
+            echo "  --with-vllm           Build runtime-sandbox-vllm target with vLLM pre-installed in /opt/vllm-venv"
             echo "  --no-cache            Force rebuild without cache"
             echo "  --help                Show this help"
             echo ""
@@ -123,6 +131,9 @@ if [[ -z "$TAG" ]]; then
     TAG="cu${CUDA_SHORT}-trc${TORCH_SHORT}-${PLATFORM_ARCH}"
     if [[ -n "$BUILD_SANDBOX" ]]; then
         TAG="${TAG}-sandbox"
+    fi
+    if [[ -n "$BUILD_VLLM" ]]; then
+        TAG="${TAG}-vllm"
     fi
     echo "Auto-generated tag: ${TAG}"
 fi
