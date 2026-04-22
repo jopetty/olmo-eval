@@ -292,9 +292,8 @@ def _build_server_command(
     if enable_prefix_caching:
         cmd.append("--enable-prefix-caching")
 
-    # Chat template kwargs (e.g., for Qwen3 enable_thinking)
-    if chat_template_kwargs:
-        cmd.extend(["--chat-template-kwargs", json.dumps(chat_template_kwargs)])
+    # chat_template_kwargs are passed per-request via extra_body (see vllm_server.py);
+    # vLLM's CLI does not accept --chat-template-kwargs as a server-level flag.
 
     # Disable tqdm loading bar by default, enable with --debug-provider
     if is_debug_provider():
