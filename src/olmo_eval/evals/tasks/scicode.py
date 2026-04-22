@@ -326,7 +326,7 @@ class SciCodeExecutionScorer(ExecutionScorer):
     """Run each sub-step's tests against the model's generated code."""
 
     name: str = "scicode_exec"
-    timeout: float = 300.0
+    timeout: float = 600.0
     h5py_file: str = DEFAULT_H5PY_PATH
 
     async def ascore(
