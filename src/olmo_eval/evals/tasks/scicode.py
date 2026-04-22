@@ -427,7 +427,7 @@ class SciCode(Task):
     """SciCode multi-step scientific code generation task."""
 
     data_source = DataSource(path="SciCode1/SciCode", split="test")
-    sampling_params = SamplingParams(max_tokens=4096, temperature=0.0)
+    sampling_params = SamplingParams(max_tokens=16384, temperature=0.0)
     metrics = (
         SciCodeSubStepAccuracyMetric(),
         SciCodeMainProblemAccuracyMetric(),

@@ -215,7 +215,7 @@ class HarnessPresets:
                     image="ghcr.io/astral-sh/uv:python3.12-bookworm-slim",
                     mode=SandboxMode.DOCKER,
                     startup_timeout=300.0,
-                    command_timeout=300.0,
+                    command_timeout=600.0,
                     log_dir=_get_logs_dir(),
                     inject_swerex=True,
                     dockerfile_extra=(
