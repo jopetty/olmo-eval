@@ -426,6 +426,7 @@ def scoring_worker(
                 )
                 sys.exit(1)
 
+        # Create provider registry from config (servers already running)
         provider_registry = None
         if registry_config:
             from olmo_eval.inference.registry import ProviderRegistry
