@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING, Any
 
 from olmo_eval.common.constants.infrastructure import (
@@ -17,20 +16,6 @@ if TYPE_CHECKING:
     from olmo_eval.cli.beaker.config_loader import LaunchConfig
     from olmo_eval.cli.beaker.experiment_plan import ExperimentPlan
     from olmo_eval.launch import BeakerJobConfig
-
-
-def _format_arg_value(value: Any) -> str:
-    """Serialize a value for -a / -K CLI args so remote parsing matches local types.
-
-    Dicts and lists go through json.dumps to survive the CLI round-trip as JSON
-    (Python's default repr uses single quotes which json.loads rejects). Bools
-    become lowercase ``true``/``false`` to match the CLI coercion convention.
-    """
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, (dict, list)):
-        return json.dumps(value)
-    return str(value)
 
 
 def get_provider_kind(model_spec: str, default_kind: str | None = None) -> str | None:
@@ -219,12 +204,12 @@ def assemble_external_eval_job(
     # Add eval_args
     if eval_args:
         for key, value in eval_args.items():
-            command.extend(["-a", f"{key}={_format_arg_value(value)}"])
+            command.extend(["-a", f"{key}={value}"])
 
     # Add provider_kwargs
     if provider_kwargs:
         for key, value in provider_kwargs.items():
-            command.extend(["-K", f"{key}={_format_arg_value(value)}"])
+            command.extend(["-K", f"{key}={value}"])
 
     # Add storage options (only when --store is enabled)
     if store:

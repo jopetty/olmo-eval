@@ -41,6 +41,7 @@ class SciCodeArgs:
     split: str = "test"
     problem_ids: list[str] | None = None
     with_background: bool = True
+    enable_thinking: bool = False
     max_tokens: int = 16384
     temperature: float = 0.6
     max_concurrency: int = 4
@@ -64,6 +65,7 @@ class SciCodeArgs:
             split=data.get("split", "test"),
             problem_ids=problem_ids,
             with_background=_coerce_bool(data.get("with_background", True)),
+            enable_thinking=_coerce_bool(data.get("enable_thinking", False)),
             max_tokens=int(data.get("max_tokens", 16384)),
             temperature=float(data.get("temperature", 0.6)),
             max_concurrency=int(data.get("max_concurrency", 4)),
@@ -139,6 +141,10 @@ class SciCodeExternalEval(ExternalEval):
             "split": ("Dataset split (test or validation)", "test"),
             "problem_ids": ("Comma-separated problem IDs (default: all)", None),
             "with_background": ("Inject scientist-annotated step backgrounds", True),
+            "enable_thinking": (
+                "Set chat_template_kwargs.enable_thinking=true on the provider",
+                False,
+            ),
             "max_tokens": ("Max generation tokens per sub-step", 16384),
             "temperature": ("Sampling temperature", 0.6),
             "max_concurrency": ("Max parallel problems", 4),
@@ -159,6 +165,10 @@ class SciCodeExternalEval(ExternalEval):
     ) -> ExternalEvalResult:
         start_time = time.time()
         sc_args = SciCodeArgs.from_dict(args)
+
+        if sc_args.enable_thinking:
+            existing = getattr(provider, "chat_template_kwargs", None) or {}
+            provider.chat_template_kwargs = {**existing, "enable_thinking": True}
 
         problems = scicode_loader.load_problems(
             split=sc_args.split, problem_ids=sc_args.problem_ids

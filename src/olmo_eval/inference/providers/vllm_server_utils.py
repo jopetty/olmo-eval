@@ -292,6 +292,10 @@ def _build_server_command(
     if enable_prefix_caching:
         cmd.append("--enable-prefix-caching")
 
+    # Chat template kwargs (e.g., for Qwen3 enable_thinking)
+    if chat_template_kwargs:
+        cmd.extend(["--chat-template-kwargs", json.dumps(chat_template_kwargs)])
+
     # Disable tqdm loading bar by default, enable with --debug-provider
     if is_debug_provider():
         cmd.append("--use-tqdm-on-load")
