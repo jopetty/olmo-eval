@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import multiprocessing as mp
 import os
 import queue
@@ -149,6 +150,16 @@ def inference_worker(
         if init_queue is not None:
             init_queue.put((worker_id, init_time))
 
+        if output_dir and provider_kind == "vllm_server":
+            base_url = getattr(harness.provider, "base_url", None)
+            if base_url:
+                main_provider_path = os.path.join(output_dir, "main_provider.json")
+                main_cfg = provider_config.to_dict()
+                main_cfg["base_url"] = base_url
+                with open(main_provider_path, "w") as f:
+                    json.dump({"main": [main_cfg]}, f)
+                worker_logger.info(f"Wrote main provider config to {main_provider_path}")
+
         try:
             # Configure agent trace output if using openai_agents backend
             if harness_config.backend == "openai_agents" and output_dir:
@@ -227,6 +238,7 @@ def scoring_worker(
     ready_event: MPEvent | None = None,
     max_concurrency: int = DEFAULT_SCORING_CONCURRENCY,
     registry_config: dict[str, list[dict[str, Any]]] | None = None,
+    output_dir: str | None = None,
 ) -> None:
     """Worker process that scores responses with concurrent execution.
 
@@ -426,7 +438,6 @@ def scoring_worker(
                 )
                 sys.exit(1)
 
-        # Create provider registry from config (servers already running)
         provider_registry = None
         if registry_config:
             from olmo_eval.inference.registry import ProviderRegistry
@@ -436,6 +447,44 @@ def scoring_worker(
                 worker_logger.info(
                     f"Provider registry ready with providers: {provider_registry.names}"
                 )
+
+        class _LazyMainRegistry:
+            def __init__(self, base: Any, path: str | None) -> None:
+                self._base = base
+                self._path = path
+                self._loaded = False
+
+            def _maybe_load(self) -> None:
+                if self._loaded or not self._path:
+                    return
+                if os.path.exists(self._path):
+                    from olmo_eval.inference.registry import ProviderRegistry
+
+                    with open(self._path) as fh:
+                        data = json.load(fh)
+                    merged: dict[str, list[dict[str, Any]]] = {}
+                    if isinstance(self._base, ProviderRegistry):
+                        merged.update(self._base.to_serialized())
+                    merged.update(data)
+                    reg = ProviderRegistry.from_serialized(merged)
+                    if reg is not None:
+                        self._base = reg
+                    self._loaded = True
+
+            def get(self, name: str) -> Any:
+                self._maybe_load()
+                if self._base is None:
+                    raise KeyError(f"Unknown provider {name!r}. Available: []")
+                return self._base.get(name)
+
+            @property
+            def names(self) -> list[str]:
+                self._maybe_load()
+                return list(self._base.names) if self._base is not None else []
+
+        if output_dir:
+            main_provider_path = os.path.join(output_dir, "main_provider.json")
+            provider_registry = _LazyMainRegistry(provider_registry, main_provider_path)
 
         scoring_context = ScoringContext(
             execution_env=sandbox_manager,

@@ -623,6 +623,8 @@ class SciCode(Task):
                 "SciCode sequential cascade requires a ScoringContext with an inference_pool."
             )
         names = context.inference_pool.names
+        if "main" in names:
+            return "main"
         if len(names) != 1:
             raise RuntimeError(
                 "SciCode needs exactly one provider in inference_pool; set "
