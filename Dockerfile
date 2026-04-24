@@ -132,6 +132,4 @@ RUN ln -sf "$(which podman)" /usr/local/bin/docker \
     && echo "root:10000:11165536" >> /etc/subuid \
     && echo "root:10000:11165536" >> /etc/subgid
 
-RUN uv pip install --no-cache-dir podman-compose
-
 CMD ["bash"]
