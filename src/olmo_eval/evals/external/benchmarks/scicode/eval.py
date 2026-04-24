@@ -374,8 +374,7 @@ def _sandbox_dockerfile_extra() -> tuple[str, ...]:
         f"{_SANDBOX_PYPROJECT}"
         f"SCICODE_PYPROJECT_EOF",
         f"RUN cat > uv.lock <<'SCICODE_UVLOCK_EOF'\n{_SANDBOX_UV_LOCK}SCICODE_UVLOCK_EOF",
-        "RUN uv export --frozen --no-dev --no-hashes --format requirements-txt "
-        "-o /tmp/scicode-requirements.txt",
-        "RUN uv pip install --python /root/python/bin/python --no-cache "
-        "-r /tmp/scicode-requirements.txt",
+        "RUN /root/python/bin/uv export --frozen --no-dev --no-hashes "
+        "--format requirements-txt -o /tmp/scicode-requirements.txt",
+        "RUN /root/python/bin/uv pip install --system --no-cache -r /tmp/scicode-requirements.txt",
     )
