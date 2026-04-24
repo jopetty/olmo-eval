@@ -1,8 +1,7 @@
-# ruff: noqa: E501
 """Prompt construction for SciCode sequential sub-step generation.
 
 Templates mirror scicode-bench/SciCode/eval/data/{multistep_template.txt,
-background_comment_template.txt}. The hardcoded snippets are gold code the
+background_comment_template.txt}. HARDCODED_SNIPPETS carries gold code the
 upstream repo ships for three sub-steps (13.6, 62.1, 76.3) rather than asking
 the model to generate them.
 """
@@ -12,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-_HARDCODED_SNIPPETS: dict[str, dict[int, str]] = {
+HARDCODED_SNIPPETS: dict[str, dict[int, str]] = {
     "13": {
         5: '''class Maxwell:
     """ The base class for evolution of Maxwell's equations.
@@ -151,12 +150,6 @@ def _step_description(step: dict[str, Any], with_background: bool) -> str:
     return desc
 
 
-def _step_header_and_return(step: dict[str, Any]) -> str:
-    header = step["function_header"]
-    return_line = step.get("return_line") or ""
-    return f"{header}\n\n{return_line}"
-
-
 def build_step_prompt(
     sub_steps: list[dict[str, Any]],
     required_dependencies: str,
@@ -170,37 +163,28 @@ def build_step_prompt(
     ``i < step_idx`` (either model-generated from an earlier call, or a
     hardcoded snippet).
     """
-    output_lines: list[str] = []
+    prior_blocks: list[str] = []
     for i in range(step_idx):
-        output_lines.append(_step_description(sub_steps[i], with_background))
-        prev_code = previous_llm_code[i]
-        if prev_code is not None:
-            output_lines.append(prev_code)
-        output_lines.append("------")
-    if output_lines:
-        output_lines = output_lines[:-1]
+        parts = [_step_description(sub_steps[i], with_background)]
+        if previous_llm_code[i] is not None:
+            parts.append(previous_llm_code[i])  # type: ignore[arg-type]
+        prior_blocks.append("\n".join(parts))
+    problem_steps_str = "\n\n------\n\n".join(prior_blocks)
 
-    next_step_lines = [
-        _step_description(sub_steps[step_idx], with_background),
-        _step_header_and_return(sub_steps[step_idx]),
-    ]
+    next_step = sub_steps[step_idx]
+    next_step_str = "\n\n".join(
+        [
+            _step_description(next_step, with_background),
+            f"{next_step['function_header']}\n\n{next_step.get('return_line') or ''}",
+        ]
+    )
 
     template = _WITH_BACKGROUND_PROMPT_TEMPLATE if with_background else _DEFAULT_PROMPT_TEMPLATE
     return template.format(
-        problem_steps_str="\n\n".join(output_lines),
-        next_step_str="\n\n".join(next_step_lines),
+        problem_steps_str=problem_steps_str,
+        next_step_str=next_step_str,
         dependencies=required_dependencies,
     )
-
-
-def strip_import_lines(code: str) -> str:
-    kept = []
-    for line in code.split("\n"):
-        stripped = line.lstrip()
-        if stripped.startswith("import ") or stripped.startswith("from "):
-            continue
-        kept.append(line)
-    return "\n".join(kept)
 
 
 _PYTHON_BLOCK_RE = re.compile(r"```python\n(.*?)```", re.DOTALL)
@@ -215,8 +199,9 @@ def extract_step_code(text: str) -> str:
     matches = _PYTHON_BLOCK_RE.findall(text)
     if not matches:
         return ""
-    return strip_import_lines(matches[-1])
-
-
-def hardcoded_for_problem(problem_id: str) -> dict[int, str]:
-    return _HARDCODED_SNIPPETS.get(problem_id, {})
+    kept = [
+        line
+        for line in matches[-1].split("\n")
+        if not line.lstrip().startswith(("import ", "from "))
+    ]
+    return "\n".join(kept)

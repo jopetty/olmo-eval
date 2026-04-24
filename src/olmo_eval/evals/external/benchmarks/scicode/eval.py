@@ -37,7 +37,7 @@ _SANDBOX_UV_LOCK = (_SANDBOX_LOCK_DIR / "uv.lock").read_text()
 
 
 @dataclass
-class SciCodeArgs:
+class SciCodeConfig:
     """Arguments for SciCode external evaluation."""
 
     split: str = "test"
@@ -77,30 +77,6 @@ class SciCodeExternalEval(ExternalEval):
     def timeout_seconds(self) -> float:
         return 14400.0
 
-    @property
-    def arguments(self) -> dict[str, tuple[str, Any | None]]:
-        return {
-            "split": ("Dataset split (test or validation)", "test"),
-            "problem_ids": (
-                'JSON list of problem IDs, e.g. \'["13.1","14.2"]\' (default: all)',
-                None,
-            ),
-            "with_background": ("Inject scientist-annotated step backgrounds", True),
-            "enable_thinking": (
-                "Set chat_template_kwargs.enable_thinking=true on the provider",
-                False,
-            ),
-            "max_tokens": ("Max generation tokens per sub-step", 16384),
-            "temperature": ("Sampling temperature", 0.6),
-            "max_concurrency": ("Max parallel problems", 4),
-            "command_timeout": ("Per-sub-step sandbox execution timeout", 600.0),
-            "h5py_host_path": ("Host path to SciCode test_data.h5", DEFAULT_H5PY_HOST_PATH),
-            "h5py_container_path": (
-                "Mount path inside the sandbox",
-                DEFAULT_H5PY_CONTAINER_PATH,
-            ),
-        }
-
     async def execute(
         self,
         provider: InferenceProvider,
@@ -109,7 +85,7 @@ class SciCodeExternalEval(ExternalEval):
         container_runtime: str = "podman",
     ) -> ExternalEvalResult:
         start_time = time.time()
-        sc_args = SciCodeArgs(**args)
+        sc_args = SciCodeConfig(**args)
 
         original_chat_template_kwargs = provider.chat_template_kwargs
         if sc_args.enable_thinking:
@@ -189,10 +165,10 @@ class SciCodeExternalEval(ExternalEval):
         problem: scicode_loader.SciCodeProblem,
         provider: InferenceProvider,
         sampling_params: SamplingParams,
-        sc_args: SciCodeArgs,
+        sc_args: SciCodeConfig,
         container_runtime: str,
     ) -> dict[str, Any]:
-        hardcoded = scicode_prompts.hardcoded_for_problem(problem.problem_id)
+        hardcoded = scicode_prompts.HARDCODED_SNIPPETS.get(problem.problem_id, {})
         sub_steps = problem.sub_steps
         # Hardcoded snippets feed generation via previous_llm_code but stay out
         # of step_codes; the verifier receives them separately as hardcoded_prelude.
@@ -272,7 +248,7 @@ class SciCodeExternalEval(ExternalEval):
         scorable_indices: list[int],
         full_code: str,
         hardcoded_prelude: str,
-        sc_args: SciCodeArgs,
+        sc_args: SciCodeConfig,
         container_runtime: str,
     ) -> list[bool]:
         from olmo_eval.harness.sandbox import SandboxManager
