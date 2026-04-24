@@ -368,6 +368,7 @@ class MBPPOlmo3Base(MBPPBase):
         PassAtKMetric(k=8, scorer=CodeExecutionScorer3s),
         PassAtKMetric(k=16, scorer=CodeExecutionScorer3s),
     )
+    primary_metric = PassAtKMetric(k=1, scorer=CodeExecutionScorer)
 
     _ANSWER_PREFIX = "Here is the completed function:\n\n```python\n"
 

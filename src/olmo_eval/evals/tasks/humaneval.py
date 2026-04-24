@@ -323,6 +323,7 @@ class HumanEvalOlmo3Base(HumanEval):
         PassAtKMetric(k=8, scorer=CodeExecutionScorer3s),
         PassAtKMetric(k=16, scorer=CodeExecutionScorer3s),
     )
+    primary_metric = PassAtKMetric(k=1, scorer=CodeExecutionScorer)
     fewshot_split: str = "test"
 
     def process_doc(self, doc: dict[str, Any], index: int = 0) -> Instance:
