@@ -10,14 +10,11 @@ from olmo_eval.common.config import get_infra_config
 
 logger = logging.getLogger(__name__)
 
-# Python standalone URL for building derived images
-PYTHON_STANDALONE_URL = (
-    "https://github.com/indygreg/python-build-standalone/releases/download/"
-    "20240107/cpython-3.11.7+20240107-x86_64-unknown-linux-gnu-install_only.tar.gz"
-)
+# Pinned uv image used to bootstrap Python and install swe-rex in derived images
+UV_IMAGE = "ghcr.io/astral-sh/uv:0.11.7"
 
 # Version bump this when changing the Dockerfile to invalidate cached images
-SWEREX_IMAGE_VERSION = "20260424.1"
+SWEREX_IMAGE_VERSION = "20260424.2"
 
 
 def get_swerex_image(
@@ -56,7 +53,7 @@ def get_swerex_image(
 
     # Create a deterministic tag based on base image, Python URL, version, and extra commands
     extra_hash = ":".join(dockerfile_extra) if dockerfile_extra else ""
-    hash_input = f"{base_image}:{PYTHON_STANDALONE_URL}:{SWEREX_IMAGE_VERSION}:{extra_hash}"
+    hash_input = f"{base_image}:{UV_IMAGE}:{SWEREX_IMAGE_VERSION}:{extra_hash}"
     tag_hash = hashlib.sha256(hash_input.encode()).hexdigest()[:12]
 
     # Local image name
@@ -118,16 +115,14 @@ USER root
 # Disable apt sandboxing to avoid setgroups/setegid errors in rootless containers
 RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99-disable-sandbox
 RUN apt-get update && \\
-    apt-get install -y --no-install-recommends curl git ca-certificates && \\
+    apt-get install -y --no-install-recommends git ca-certificates && \\
     rm -rf /var/lib/apt/lists/*
-ADD {PYTHON_STANDALONE_URL} /tmp/python.tar.gz
-RUN tar xzf /tmp/python.tar.gz -C /root && rm /tmp/python.tar.gz && \\
-    /root/python/bin/pip install --no-cache-dir uv && \\
-    /root/python/bin/uv venv /root/venv --python /root/python/bin/python && \\
-    /root/python/bin/uv pip install --python /root/venv/bin/python --no-cache-dir swe-rex uv
+COPY --from={UV_IMAGE} /uv /uvx /usr/local/bin/
+RUN uv venv /root/venv --python 3.11 && \\
+    uv pip install --python /root/venv/bin/python --no-cache-dir swe-rex
 {extra_lines}
 ENV VIRTUAL_ENV="/root/venv"
-ENV PATH="/root/venv/bin:/root/python/bin:$PATH"
+ENV PATH="/root/venv/bin:$PATH"
 """
 
     result = subprocess.run(
