@@ -140,7 +140,7 @@ class TestRunProblemCascade(unittest.IsolatedAsyncioTestCase):
             "```python\ndef c():\n    return 3\n```",
         ]
         provider = _FakeProvider(responses)
-        sc_args = scicode_eval.SciCodeArgs(max_concurrency=1, with_background=True)
+        sc_args = scicode_eval.SciCodeConfig(max_concurrency=1, with_background=True)
         evaluator = scicode_eval.SciCodeExternalEval()
 
         async def fake_verify(**_kwargs: Any) -> list[bool]:
@@ -169,7 +169,7 @@ class TestRunProblemCascade(unittest.IsolatedAsyncioTestCase):
             "```python\ndef b():\n    return 2\n```",
         ]
         provider = _FakeProvider(responses)
-        sc_args = scicode_eval.SciCodeArgs(max_concurrency=1, with_background=True)
+        sc_args = scicode_eval.SciCodeConfig(max_concurrency=1, with_background=True)
         evaluator = scicode_eval.SciCodeExternalEval()
 
         async def fake_verify(**_kwargs: Any) -> list[bool]:
@@ -199,7 +199,7 @@ class TestRunProblemCascade(unittest.IsolatedAsyncioTestCase):
             "```python\ndef step_three():\n    return 'GAMMA_MARKER'\n```",
         ]
         provider = _FakeProvider(responses)
-        sc_args = scicode_eval.SciCodeArgs(max_concurrency=1, with_background=True)
+        sc_args = scicode_eval.SciCodeConfig(max_concurrency=1, with_background=True)
         evaluator = scicode_eval.SciCodeExternalEval()
 
         async def fake_verify(**_kwargs: Any) -> list[bool]:
