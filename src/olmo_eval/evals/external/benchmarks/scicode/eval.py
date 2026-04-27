@@ -285,6 +285,8 @@ class SciCodeExternalEval(ExternalEval):
         results: list[bool] = []
         try:
             await sandbox_manager.start()
+            # --active installs into the venv that swerex's image bakes at /root/venv
+            # (exported via VIRTUAL_ENV); without it, uv would create a fresh project venv.
             sync_result = await sandbox_manager.execute_code(
                 f"uv sync --active --frozen --no-dev --project {_SANDBOX_DEPS_CONTAINER_DIR}",
                 language="bash",

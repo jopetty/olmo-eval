@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 UV_IMAGE = "ghcr.io/astral-sh/uv:0.11.7"
 
 # Version bump this when changing the Dockerfile to invalidate cached images
-SWEREX_IMAGE_VERSION = "20260424.2"
+SWEREX_IMAGE_VERSION = "20260427.1"
 
 
 def get_swerex_image(
@@ -104,7 +104,7 @@ def get_swerex_image(
             return registry_image if require_registry else local_image
         logger.debug("Registry pull failed, will build locally")
 
-    # Build the image with Python, swe-rex, curl, git, and uv
+    # Build the image with Python (via uv venv), swe-rex, curl, and git
     logger.info(f"Building swerex image from {base_image}...")
 
     extra_lines = "\n".join(dockerfile_extra) if dockerfile_extra else ""
@@ -115,7 +115,7 @@ USER root
 # Disable apt sandboxing to avoid setgroups/setegid errors in rootless containers
 RUN echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99-disable-sandbox
 RUN apt-get update && \\
-    apt-get install -y --no-install-recommends git ca-certificates && \\
+    apt-get install -y --no-install-recommends curl git ca-certificates && \\
     rm -rf /var/lib/apt/lists/*
 COPY --from={UV_IMAGE} /uv /uvx /usr/local/bin/
 RUN uv venv /root/venv --python 3.11 && \\
