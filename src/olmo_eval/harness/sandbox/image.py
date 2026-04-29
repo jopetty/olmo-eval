@@ -20,7 +20,7 @@ _resolved_images: dict[str, str] = {}
 UV_IMAGE = "ghcr.io/astral-sh/uv:0.11.7"
 
 # Version bump this when changing the Dockerfile to invalidate cached images
-SWEREX_IMAGE_VERSION = "20260427.1"
+SWEREX_IMAGE_VERSION = "20260429.1"
 
 
 def _remote_image_exists(container_runtime: str, image: str) -> bool:
@@ -192,7 +192,7 @@ RUN apt-get update && \\
     apt-get install -y --no-install-recommends curl git ca-certificates && \\
     rm -rf /var/lib/apt/lists/*
 COPY --from={UV_IMAGE} /uv /uvx /usr/local/bin/
-RUN uv venv /root/venv --python 3.11 && \\
+RUN uv venv /root/venv --python 3.12 && \\
     uv pip install --python /root/venv/bin/python --no-cache-dir swe-rex
 {extra_lines}
 ENV VIRTUAL_ENV="/root/venv"

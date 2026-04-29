@@ -28,6 +28,7 @@ from olmo_eval.harness.sandbox.config import (
     SandboxMode,
 )
 from olmo_eval.inference.base import InferenceProvider
+from olmo_eval.inference.metrics.core.collector import InstrumentedProvider
 from olmo_eval.inference.providers.vllm_server import VLLMServerProvider
 
 from . import loader as scicode_loader
@@ -37,7 +38,7 @@ from . import verifier as scicode_verifier
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_H5PY_HOST_PATH = "/weka/oe-adapt-default/finbarrt/scicode/test_data.h5"
+DEFAULT_H5PY_HOST_PATH = ""
 DEFAULT_H5PY_CONTAINER_PATH = "/workspace/scicode_test_data.h5"
 
 _SANDBOX_LOCK_DIR = Path(__file__).parent / "sandbox"
@@ -95,9 +96,14 @@ class SciCodeExternalEval(ExternalEval):
         start_time = time.time()
         sc_args = SciCodeConfig(**args)
 
-        if not isinstance(provider, VLLMServerProvider):
-            raise TypeError(f"SciCode requires VLLMServerProvider, got {type(provider).__name__}.")
-        provider.chat_template_kwargs = (provider.chat_template_kwargs or {}) | {
+        raw_provider = (
+            provider.base_provider if isinstance(provider, InstrumentedProvider) else provider
+        )
+        if not isinstance(raw_provider, VLLMServerProvider):
+            raise TypeError(
+                f"SciCode requires VLLMServerProvider, got {type(raw_provider).__name__}."
+            )
+        raw_provider.chat_template_kwargs = (raw_provider.chat_template_kwargs or {}) | {
             "enable_thinking": sc_args.enable_thinking,
         }
 
@@ -267,7 +273,7 @@ class SciCodeExternalEval(ExternalEval):
             image=sc_args.sandbox_image,
             mode=SandboxMode.DOCKER,
             container_runtime=cast(ContainerRuntime, container_runtime),
-            capabilities=Capability.PYTHON,
+            capabilities=(Capability.PYTHON | Capability.BASH),
             startup_timeout=sc_args.startup_timeout,
             command_timeout=sc_args.command_timeout,
             inject_swerex=True,
