@@ -23,6 +23,15 @@ logger = logging.getLogger(__name__)
 
 _BEAKER_AVAILABLE = importlib.util.find_spec("beaker") is not None
 
+
+def _beaker_credentials_present() -> bool:
+    """Return True if Beaker.from_env() will find credentials."""
+    if os.environ.get("BEAKER_TOKEN"):
+        return True
+    config_path = os.environ.get("BEAKER_CONFIG") or os.path.expanduser("~/.beaker/config.yml")
+    return os.path.exists(config_path)
+
+
 DEFAULT_MIN_INTERVAL = 10.0
 
 
@@ -46,10 +55,18 @@ class BeakerStatusReporter:
         self._workload_id = os.environ.get("BEAKER_WORKLOAD_ID") or os.environ.get(
             "BEAKER_EXPERIMENT_ID"
         )
-        self.enabled = bool(self._workload_id) and _BEAKER_AVAILABLE
-        if bool(self._workload_id) and not _BEAKER_AVAILABLE:
+        has_workload = bool(self._workload_id)
+        has_creds = _beaker_credentials_present()
+        self.enabled = has_workload and _BEAKER_AVAILABLE and has_creds
+        if has_workload and not _BEAKER_AVAILABLE:
             logger.warning(
                 "BEAKER_WORKLOAD_ID set but beaker-py not installed; "
+                "Beaker status updates disabled."
+            )
+        elif has_workload and _BEAKER_AVAILABLE and not has_creds:
+            logger.warning(
+                "BEAKER_WORKLOAD_ID set but no Beaker credentials found "
+                "(BEAKER_TOKEN env var or ~/.beaker/config.yml); "
                 "Beaker status updates disabled."
             )
         self._client: Beaker | None = None

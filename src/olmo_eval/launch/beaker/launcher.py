@@ -805,6 +805,11 @@ class BeakerLauncher:
             (secret.name, secret.secret) for secret in config.env_secrets
         ]
 
+        # Inject BEAKER_TOKEN so the running job can post status updates back to
+        # the workload description via BeakerStatusReporter.
+        if not any(name == "BEAKER_TOKEN" for name, _ in env_secrets):
+            env_secrets.append(("BEAKER_TOKEN", f"{self.beaker.user_name}_BEAKER_TOKEN"))
+
         # Inject AWS credentials if requested
         if config.inject_aws_credentials:
             from olmo_eval.launch.beaker.aws import ensure_aws_secrets
