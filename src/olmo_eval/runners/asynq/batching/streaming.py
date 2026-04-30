@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import queue
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -36,6 +37,7 @@ class StreamingStrategy(BatchingStrategy):
         """Execute streaming to provider."""
         import math
 
+        from olmo_eval.common.beaker_status import BeakerStatusReporter
         from olmo_eval.common.progress import ProgressLogger
         from olmo_eval.runners.asynq.processing import process_items
 
@@ -50,6 +52,15 @@ class StreamingStrategy(BatchingStrategy):
             logger=worker_logger,
             color="green",
         )
+        reporter = BeakerStatusReporter()
+
+        def _beaker_message() -> str:
+            elapsed = max(time.time() - progress.start_time, 1e-9)
+            rate = progress.count / elapsed
+            pct = (progress.count / progress.total * 100) if progress.total > 0 else 0.0
+            return (
+                f"Processed {progress.count}/{progress.total} ({pct:.0f}%) at {rate:.1f} items/sec"
+            )
 
         async def process_single(item: QueueItem) -> None:
             async with semaphore:
@@ -57,6 +68,7 @@ class StreamingStrategy(BatchingStrategy):
                     [item], harness, result_queue, 1, worker_logger, show_progress=False
                 )
                 progress.update(1)
+                reporter.update(_beaker_message())
 
         async def get_item() -> QueueItem | None:
             """Get next item from queue asynchronously."""
@@ -88,3 +100,4 @@ class StreamingStrategy(BatchingStrategy):
             await asyncio.gather(*in_flight)
 
         progress.close()
+        reporter.update(_beaker_message(), force=True)

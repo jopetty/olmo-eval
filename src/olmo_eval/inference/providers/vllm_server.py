@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from olmo_eval.common.beaker_status import BeakerStatusReporter
 from olmo_eval.common.logging import get_logger
 from olmo_eval.common.types import LMOutput, LMRequest, LogProbEntry, RequestType, SamplingParams
 from olmo_eval.common.types.tools import ToolCall
@@ -17,7 +19,7 @@ from olmo_eval.inference.utils import run_async
 if TYPE_CHECKING:
     from openai import AsyncOpenAI
 
-    from .vllm_server_utils import VLLMServerProcess
+    from .vllm_server_utils import ProgressCallback, VLLMServerProcess
 
 logger = get_logger(__name__)
 
@@ -179,6 +181,7 @@ class VLLMServerProvider(InferenceProvider):
         trust_remote_code: bool = False,
         log_dir: str | None = None,
         chat_template_kwargs: dict[str, Any] | None = None,
+        progress_callback: ProgressCallback | None = None,
         **server_kwargs: Any,
     ) -> None:
         """Initialize the provider.
@@ -197,9 +200,19 @@ class VLLMServerProvider(InferenceProvider):
             trust_remote_code: Trust remote code for model loading (server mode).
             log_dir: Directory to write server logs to (server mode).
             chat_template_kwargs: Extra kwargs for chat template (e.g., {"enable_thinking": false}).
+            progress_callback: Optional ``Callable[[str], None]`` invoked with status
+                strings during server startup and periodically during ``agenerate()``.
+                Defaults to logging at INFO level.
             **server_kwargs: Additional vLLM server arguments.
         """
         super().__init__(model_name)
+        self._beaker_reporter = BeakerStatusReporter()
+
+        def _default_progress(msg: str) -> None:
+            logger.info(msg)
+            self._beaker_reporter.update(msg)
+
+        self._progress_callback: ProgressCallback = progress_callback or _default_progress
         self.timeout = timeout
         self.max_concurrency = max_concurrency
         self.max_retries = max_retries
@@ -241,7 +254,7 @@ class VLLMServerProvider(InferenceProvider):
                 log_dir=log_dir,
                 **srv_kwargs,
             )
-            self._server.start()
+            self._server.start(progress_callback=self._progress_callback)
             self.base_url = self._server.base_url
 
     def close(self) -> None:
@@ -593,8 +606,25 @@ class VLLMServerProvider(InferenceProvider):
 
         params = self._default_sampling_params(sampling_params)
 
+        total = len(requests)
+        completed = 0
+        last_emit = time.monotonic()
+        emit_interval = 10.0
+        start = time.monotonic()
+        callback = self._progress_callback
+
         async def process(req: LMRequest) -> list[LMOutput]:
-            return await self._generate_single_async(req, params)
+            nonlocal completed, last_emit
+            result = await self._generate_single_async(req, params)
+            completed += 1
+            now = time.monotonic()
+            if completed == total or now - last_emit >= emit_interval:
+                elapsed = max(now - start, 1e-9)
+                rate = completed / elapsed
+                pct = completed / total * 100 if total > 0 else 0.0
+                callback(f"vLLM gen {completed}/{total} ({pct:.0f}%) at {rate:.1f} req/sec")
+                last_emit = now
+            return result
 
         results = await dispatch_concurrent(
             requests,
