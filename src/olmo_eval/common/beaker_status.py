@@ -37,7 +37,7 @@ DEFAULT_MIN_INTERVAL = 10.0
 
 def _git_suffix() -> str:
     """Return ``git_commit: X git_branch: Y`` suffix from env vars (or unknown)."""
-    commit = os.environ.get("GIT_COMMIT") or "unknown"
+    commit = os.environ.get("GIT_COMMIT") or os.environ.get("GIT_REF") or "unknown"
     branch = os.environ.get("GIT_BRANCH") or "unknown"
     return f"git_commit: {commit} git_branch: {branch}"
 
