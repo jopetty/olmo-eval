@@ -15,6 +15,8 @@ ARG CUDA_VERSION=12.8.1
 ARG TORCH_VERSION=2.9.0
 ARG PYTHON_VERSION=3.12
 ARG INSTALL_CHANNEL=whl
+ARG GIT_COMMIT=""
+ARG GIT_BRANCH=""
 
 # ============================================================================
 # Stage 1: Builder — venv with PyTorch + lockfile-pinned project deps
@@ -58,12 +60,16 @@ FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu24.04 AS runtime
 ARG CUDA_VERSION
 ARG TORCH_VERSION
 ARG PYTHON_VERSION
+ARG GIT_COMMIT
+ARG GIT_BRANCH
 
 LABEL org.opencontainers.image.source="https://github.com/allenai/olmo-eval-internal"
 LABEL org.opencontainers.image.description="OLMo evaluation framework"
 LABEL cuda_version="${CUDA_VERSION}"
 LABEL torch_version="${TORCH_VERSION}"
 LABEL python_version="${PYTHON_VERSION}"
+LABEL git_commit="${GIT_COMMIT}"
+LABEL git_branch="${GIT_BRANCH}"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential ca-certificates curl git \
@@ -80,6 +86,8 @@ ENV VIRTUAL_ENV="/opt/venv"
 ENV VLLM_LOGGING_LEVEL=WARNING
 ENV HF_HOME=/root/.cache/huggingface
 ENV PYTHONUNBUFFERED=1
+ENV GIT_COMMIT=${GIT_COMMIT}
+ENV GIT_BRANCH=${GIT_BRANCH}
 
 WORKDIR /workspace
 CMD ["bash"]
@@ -89,7 +97,12 @@ CMD ["bash"]
 # ============================================================================
 FROM runtime AS runtime-sandbox
 
+ARG GIT_COMMIT
+ARG GIT_BRANCH
+
 LABEL org.opencontainers.image.description="OLMo evaluation framework with Podman sandbox support"
+LABEL git_commit="${GIT_COMMIT}"
+LABEL git_branch="${GIT_BRANCH}"
 LABEL sandbox_enabled="true"
 
 ENV DEBIAN_FRONTEND=noninteractive
