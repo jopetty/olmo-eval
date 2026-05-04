@@ -1,11 +1,11 @@
-"""IFBench: out-of-distribution instruction-following benchmark.
+"""IFEval OOD: out-of-distribution instruction-following slice of IFBench.
 
-Dataset: ``allenai/IFBench_test`` (300 prompts). Each row carries a list of
-instruction IDs and per-instruction kwargs; verifiers come from the upstream
-``allenai/IFBench`` package, accessed lazily via :class:`IFEvalScorer`.
+Dataset: ``allenai/IFBench_test2`` (300 prompts), each carrying a list of
+instruction IDs and per-instruction kwargs. Verifiers come from the vendored
+registry in :mod:`olmo_eval.common.scorers.ifeval_deps`.
 
-Reports prompt-level and instruction-level accuracy in both strict and loose
-modes, matching upstream IFEval reporting.
+Mirrors the ``ifeval_ood::tulu`` configuration in oe-eval-internal: chat
+format, ``max_gen_toks=2048``, primary metric ``prompt_level_loose_acc``.
 """
 
 from __future__ import annotations
@@ -30,12 +30,12 @@ from olmo_eval.common.types import (
 from olmo_eval.data import DataSource
 from olmo_eval.evals.tasks.common import Task, register
 
-_PRIMARY_METRIC = IFEvalInstLooseAccuracy()
+_PRIMARY_METRIC = IFEvalPromptLooseAccuracy()
 
 
-@register("ifbench")
-class IFBench(Task):
-    data_source = DataSource(path="allenai/IFBench_test", split="train")
+@register("ifeval_ood")
+class IFEvalOOD(Task):
+    data_source = DataSource(path="allenai/IFBench_test2", split="train")
     split = Split.TRAIN
     metrics = (
         IFEvalPromptStrictAccuracy(),
@@ -45,7 +45,7 @@ class IFBench(Task):
     )
     primary_metric = _PRIMARY_METRIC
     sampling_params = SamplingParams(
-        max_tokens=1280,
+        max_tokens=2048,
         temperature=0.0,
         do_sample=False,
     )
@@ -53,6 +53,10 @@ class IFBench(Task):
     @property
     def instances(self) -> Iterator[Instance]:
         yield from self._load_instances_cached()
+
+    @property
+    def request_type(self) -> RequestType:
+        return RequestType.CHAT
 
     def process_doc(self, doc: dict[str, Any], index: int = 0) -> Instance | None:
         prompt = doc["prompt"]
@@ -72,7 +76,10 @@ class IFBench(Task):
         )
 
     def format_request(self, instance: Instance) -> LMRequest:
-        return LMRequest(request_type=RequestType.COMPLETION, prompt=instance.question)
+        return LMRequest(
+            request_type=RequestType.CHAT,
+            messages=({"role": "user", "content": instance.question},),
+        )
 
     def extract_answer(self, output: LMOutput) -> str:
         return output.text

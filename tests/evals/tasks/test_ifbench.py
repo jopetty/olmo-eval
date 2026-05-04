@@ -1,11 +1,9 @@
-"""Tests for the IFBench task and IFEval scoring stack."""
+"""Tests for IFBench tasks (ifeval_ood + ifeval_mt) and the IFEval scoring stack."""
 
 from __future__ import annotations
 
 import unittest
 from typing import Any
-
-import pytest
 
 from olmo_eval.common.metrics import (
     IFEvalInstLooseAccuracy,
@@ -15,10 +13,8 @@ from olmo_eval.common.metrics import (
 )
 from olmo_eval.common.scorers import IFEvalScorer
 from olmo_eval.common.types import Instance, LMOutput, LMRequest, RequestType, Response
+from olmo_eval.evals.suites.registry import get_suite
 from olmo_eval.evals.tasks.common import get_task
-
-# Skip the whole module if upstream IFBench isn't installed.
-pytest.importorskip("instructions_registry")
 
 
 def _make_instance(
@@ -47,9 +43,9 @@ def _make_response(instance: Instance, response_text: str) -> Response:
     )
 
 
-class TestIFBenchTask(unittest.TestCase):
+class TestIFEvalOODTask(unittest.TestCase):
     def test_registered(self) -> None:
-        task = get_task("ifbench")
+        task = get_task("ifeval_ood")
         self.assertIsNotNone(task)
         metric_names = {m.name for m in task.config.metrics}
         self.assertEqual(
@@ -61,9 +57,10 @@ class TestIFBenchTask(unittest.TestCase):
                 "inst_level_loose_acc",
             },
         )
+        self.assertEqual(task.request_type, RequestType.CHAT)
 
     def test_process_doc_strips_none_kwargs(self) -> None:
-        task = get_task("ifbench")
+        task = get_task("ifeval_ood")
         doc = {
             "key": 0,
             "prompt": "hi",
@@ -76,6 +73,53 @@ class TestIFBenchTask(unittest.TestCase):
         self.assertEqual(instance.metadata["instruction_id_list"], ["count:numbers"])
         self.assertEqual(instance.metadata["kwargs"], [{"N": 2}])
         self.assertEqual(instance.metadata["key"], 0)
+
+
+class TestIFEvalMTTask(unittest.TestCase):
+    def test_registered_variants(self) -> None:
+        for name in (
+            "ifeval_mt_wildchat_unused_withRewrite",
+            "ifeval_mt_ood_wildchat_unused_withRewrite",
+        ):
+            task = get_task(name)
+            self.assertIsNotNone(task)
+            self.assertEqual(task.request_type, RequestType.CHAT)
+
+    def test_process_doc_preserves_messages(self) -> None:
+        task = get_task("ifeval_mt_wildchat_unused_withRewrite")
+        messages = [
+            {"role": "user", "content": "say hi"},
+            {"role": "assistant", "content": "hi"},
+            {"role": "user", "content": "Rewrite with exactly 2 numbers."},
+        ]
+        doc = {
+            "id": "x",
+            "key": 0,
+            "prompt": "Rewrite with exactly 2 numbers.",
+            "instruction_id_list": ["count:numbers"],
+            "kwargs": [{"N": 2}],
+            "messages": messages,
+        }
+        instance = task.process_doc(doc, index=0)
+        assert instance is not None
+        self.assertEqual(len(instance.metadata["messages"]), 3)
+        self.assertEqual(instance.metadata["messages"][-1]["content"], messages[-1]["content"])
+        request = task.format_request(instance)
+        self.assertEqual(request.request_type, RequestType.CHAT)
+        self.assertEqual(len(request.messages), 3)
+
+
+class TestIFBenchSuite(unittest.TestCase):
+    def test_suite_registered(self) -> None:
+        suite = get_suite("ifbench")
+        self.assertEqual(
+            tuple(suite.tasks),
+            (
+                "ifeval_mt_wildchat_unused_withRewrite",
+                "ifeval_mt_ood_wildchat_unused_withRewrite",
+                "ifeval_ood",
+            ),
+        )
 
 
 class TestIFEvalScorer(unittest.TestCase):

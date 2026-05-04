@@ -1,7 +1,10 @@
 """Scorer for IFBench / IFEval instruction-following evaluation.
 
-Wraps the upstream `allenai/IFBench` verifier registry. The scorer evaluates a
-response against per-instance instructions (looked up in
+Uses the vendored ``olmo_eval.common.scorers.ifeval_deps`` registry, which
+covers the original IFEval (DEFAULT) verifiers, the OOD verifiers used by
+``allenai/IFBench_test2``, and the verifiers used by the multi-turn
+``VGraf/ifeval_mt`` slices. The scorer evaluates a response against
+per-instance instructions (looked up in
 ``instance.metadata["instruction_id_list"]`` / ``"kwargs"``) and writes both
 strict and loose pass/fail lists for each instruction into
 ``output.metadata["ifeval"]``. The four IFEval metrics consume that field.
@@ -9,21 +12,17 @@ strict and loose pass/fail lists for each instruction into
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
 from olmo_eval.common.scorers.base import Scorer
+from olmo_eval.common.scorers.ifeval_deps import instructions_registry
 from olmo_eval.common.types import Instance, LMOutput
 
-_INSTRUCTION_DICT: dict[str, Any] | None = None
+_INSTRUCTION_DICT: dict[str, Any] = instructions_registry.INSTRUCTION_DICT
 
 
 def _load_instruction_dict() -> dict[str, Any]:
-    global _INSTRUCTION_DICT
-    if _INSTRUCTION_DICT is None:
-        registry = importlib.import_module("instructions_registry")
-        _INSTRUCTION_DICT = registry.INSTRUCTION_DICT
     return _INSTRUCTION_DICT
 
 

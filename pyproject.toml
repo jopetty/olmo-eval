@@ -145,6 +145,12 @@ vllm = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = [
+    # Vendored from oe-eval-internal (oe_eval/dependencies/ifeval/), kept as-is.
+    "src/olmo_eval/common/scorers/ifeval_deps/instructions.py",
+    "src/olmo_eval/common/scorers/ifeval_deps/instructions_util.py",
+    "src/olmo_eval/common/scorers/ifeval_deps/instructions_registry.py",
+]
 
 [tool.ruff.lint]
 select = [
