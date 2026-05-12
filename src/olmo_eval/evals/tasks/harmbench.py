@@ -1,11 +1,14 @@
 """
 HarmBench Safety Evaluation Task
 
-This module implements the HarmBench Safety evaluation task.
+This module implements the HarmBench Safety evaluation task
+as previously implemented in allenai/safety-eval
+
+Paper: https://arxiv.org/abs/2402.04249
 
 Usage:
 
-    olmo-eval run -m llama3.1-8b -t harmbench:openai
+    olmo-eval run -m llama3.1-8b -t harmbench:wg_judge
 """
 
 import logging
