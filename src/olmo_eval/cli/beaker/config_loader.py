@@ -22,7 +22,7 @@ class LaunchConfig:
     task_specs: list[str]
     cluster: str
     workspace: str
-    budget: str
+    budget: str | None = None
 
     task_overrides: dict[str, list[str]] = field(default_factory=dict)
 
@@ -164,7 +164,6 @@ class LaunchConfigLoader:
         assert name is not None
         assert cluster is not None
         assert workspace is not None
-        assert budget is not None
 
         from olmo_eval.launch.beaker.constants import DEFAULT_S3_BUCKET, DEFAULT_S3_PREFIX
 
@@ -233,9 +232,6 @@ class LaunchConfigLoader:
             raise SystemExit(1) from None
         if not workspace:
             console.print("[red]Error:[/red] --workspace/-w is required")
-            raise SystemExit(1) from None
-        if not budget:
-            console.print("[red]Error:[/red] --budget/-B is required")
             raise SystemExit(1) from None
 
     def _generate_experiment_name(self, model_specs: list[str], task_specs: list[str]) -> str:
