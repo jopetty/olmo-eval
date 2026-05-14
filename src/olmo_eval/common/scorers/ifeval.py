@@ -14,16 +14,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from ifbench import instructions_registry
-
 from olmo_eval.common.scorers.base import Scorer
 from olmo_eval.common.types import Instance, LMOutput
-
-_INSTRUCTION_DICT: dict[str, Any] = instructions_registry.INSTRUCTION_DICT
-
-
-def _load_instruction_dict() -> dict[str, Any]:
-    return _INSTRUCTION_DICT
 
 
 def _loose_response_variants(response: str) -> list[str]:
@@ -85,7 +77,9 @@ class IFEvalScorer(Scorer):
         loose_results: list[bool] = []
 
         if instruction_ids:
-            registry = _load_instruction_dict()
+            from ifbench import instructions_registry
+
+            registry = instructions_registry.INSTRUCTION_DICT
             loose_variants = _loose_response_variants(response)
             for inst_id, inst_kwargs in zip(instruction_ids, kwargs_list, strict=True):
                 instruction_cls = registry[inst_id]
