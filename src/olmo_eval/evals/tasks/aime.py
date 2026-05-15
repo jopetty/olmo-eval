@@ -64,7 +64,7 @@ def _build_aime_instance(
 
 
 class AIMETask(MinervaMathTask):
-    data_source = DataSource(path="allenai/aime-2021-2025")
+    data_source = DataSource(path="allenai/aime-2022-2025")
     split = Split.TRAIN  # HF dataset only has a train split
     formatter = ChatFormatter(user_template="{question}")
     metrics = (AccuracyMetric(scorer=MinervaMathScorer),)
@@ -89,6 +89,16 @@ class AIMETask(MinervaMathTask):
             year=year,
             problem_number=doc.get("problem_number"),
         )
+
+
+@register("aime_2022")
+class AIME2022Task(AIMETask):
+    years = (2022,)
+
+
+@register("aime_2023")
+class AIME2023Task(AIMETask):
+    years = (2023,)
 
 
 @register("aime_2024")
@@ -127,7 +137,7 @@ _RLZERO_SAMPLING = SamplingParams(
     num_samples=32,
 )
 
-for _year in (2024, 2025, 2026):
+for _year in (2022, 2023, 2024, 2025, 2026):
     register_variant(
         f"aime_{_year}",
         "pass_at_32",
@@ -146,7 +156,7 @@ for _year in (2024, 2025, 2026):
         sampling_params=_RLZERO_SAMPLING,
     )
 
-for _year in (2025, 2026):
+for _year in (2022, 2023, 2024, 2025, 2026):
     register_variant(
         f"aime_{_year}",
         "16k",
