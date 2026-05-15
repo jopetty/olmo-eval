@@ -80,6 +80,9 @@ class Metric(ABC):
             if hasattr(scorer, "to_dict")
             else asdict(scorer)
         )
+        print(self.__class__.__name__)
+        print(self.name)
+        print(scorer_name)
         return {"type": self.__class__.__name__, "name": self.name, "scorer": scorer_name}
 
     def supports_pairwise_scorer_fallback(self) -> bool:
