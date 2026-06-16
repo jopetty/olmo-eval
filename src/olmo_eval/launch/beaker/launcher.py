@@ -862,19 +862,14 @@ class BeakerLauncher:
             # Custom provider packages (e.g., a vLLM fork) are installed below
             # into the same isolated environment.
             if has_vllm:
-                # Constrain this install to uv.lock so the web stack doesn't
-                # re-resolve to latest PyPI, which breaks vLLM's Prometheus
-                # middleware. Torch is left unconstrained on purpose (no
-                # cuda-constraints here, unlike the main venv): vLLM requires a
-                # newer torch than the base image provides, so pinning it to the
-                # base build makes the install unresolvable. VCS lines are
-                # dropped because uv export pins them to a resolved commit, which
-                # conflicts with the branch-ref URL pyproject declares for the
-                # same package (e.g. ifbench).
+                # Build a lockfile constraint set scoped to vLLM. Keep torch/CUDA
+                # out so vLLM can pick its required build, and drop direct refs
+                # that uv exports as commit-pinned URLs.
                 vllm_lock_constraints = "/tmp/vllm-lock-constraints.txt"
                 steps.append(
                     f"cd /gantry-runtime && uv export --extra vllm "
-                    f"--no-hashes --no-emit-project --frozen 2>/dev/null "
+                    f"--no-default-groups --no-hashes --no-emit-project "
+                    f"--no-header --no-annotate --frozen 2>/dev/null "
                     f"| grep -vE '^(torch|nvidia-)' | grep -vE ' @ ' "
                     f"> {vllm_lock_constraints}"
                 )
