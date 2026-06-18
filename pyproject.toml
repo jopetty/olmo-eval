@@ -228,6 +228,7 @@ allowed-unresolved-imports = [
     "scipy.**",
     "instructions_registry.**",
     "instructions.**",
+    "abstract_algebra.**",
 ]
 
 [tool.gantry]
