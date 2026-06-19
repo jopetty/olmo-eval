@@ -100,7 +100,7 @@ BASE_HARNESS_OVERRIDES = [
     ("provider.completion_sentencepiece_cleanup", "true"),
     (
         "provider.dependencies",
-        "[transformers==5.7.0]",
+        "[transformers @ git+https://github.com/YashasSamaga/transformers.git]",
     ),
     ("provider.tokenizer", "allenai/Olmo-3-1025-7B"),
 ]
