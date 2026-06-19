@@ -5247,7 +5247,7 @@ requires-dist = [
     { name = "sympy", specifier = ">=1.12" },
     { name = "textual-plot", specifier = ">=0.10.1" },
     { name = "torch-c-dlpack-ext", marker = "sys_platform != 'darwin' and extra == 'vllm'" },
-    { name = "transformers", marker = "extra == 'hf'", specifier = ">=5.4.0" },
+    { name = "transformers", marker = "extra == 'hf'", git = "https://github.com/YashasSamaga/transformers.git" },
     { name = "tree-sitter", specifier = ">=0.24.0" },
     { name = "tree-sitter-python", specifier = ">=0.23.0,<0.26.0" },
     { name = "vllm", extras = ["runai"], marker = "sys_platform != 'darwin' and extra == 'vllm'", specifier = "==0.19.1" },
@@ -11741,8 +11741,8 @@ wheels = [
 
 [[package]]
 name = "transformers"
-version = "5.7.0"
-source = { registry = "https://pypi.org/simple" }
+version = "5.8.0.dev0"
+source = { git = "https://github.com/YashasSamaga/transformers.git#10555512868d663ee1ff627e4f5c5c260114235b" }
 dependencies = [
     { name = "huggingface-hub" },
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "extra == 'extra-9-olmo-eval-agents' or extra == 'extra-9-olmo-eval-clients' or extra != 'extra-9-olmo-eval-openhands' or (extra == 'extra-9-olmo-eval-openhands' and extra == 'extra-9-olmo-eval-vllm')" },
@@ -11754,10 +11754,6 @@ dependencies = [
     { name = "tokenizers" },
     { name = "tqdm" },
     { name = "typer" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/4d/fe/7e84d20ac7d4d5d14bac2eab5976088d86342959fc2c0da54b4c2fc99856/transformers-5.7.0.tar.gz", hash = "sha256:a9d35cf39804e3456c1f9bc1a79ad5ffa878640a61f51f66f71c97f4b4e2ce10", size = 8401287, upload-time = "2026-04-28T18:30:09.75Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/60/60/86a9fe3037bec221094e2acb680219ad88b77006edba42fc0407a577ca93/transformers-5.7.0-py3-none-any.whl", hash = "sha256:869660cd8fc92badc041f5551bf755a42f4b9558c93341bf3fa3eeed7065079c", size = 10474236, upload-time = "2026-04-28T18:30:05.655Z" },
 ]
 
 [[package]]
