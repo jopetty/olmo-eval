@@ -29,7 +29,7 @@ MODEL_ROOTS = {
     ),
     "transformer-275M": Path(
         "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/transformer-small-Cx100/275M/"
-    )
+    ),
 }
 
 # hybrid-gdn and baseline models use the same step numbers; others use a very slightly different
@@ -45,7 +45,9 @@ CHECKPOINTS = {
     "gdn": {step: MODEL_ROOTS["gdn"] / f"step{step}/" for step in STEPS_B},
     "gdn+": {step: MODEL_ROOTS["gdn+"] / f"step{step}/" for step in STEPS_B},
     "hybrid-small": {step: MODEL_ROOTS["hybrid-small"] / f"step{step}/" for step in STEPS_C},
-    "transformer-275M": {step: MODEL_ROOTS["transformer-275M"] / f"step{step}/" for step in STEPS_C},
+    "transformer-275M": {
+        step: MODEL_ROOTS["transformer-275M"] / f"step{step}/" for step in STEPS_C
+    },
 }
 
 OLMO_3_7B_BASE_ID = "allenai/Olmo-3-1025-7B"
@@ -62,29 +64,24 @@ TASKS = [
     "formal_langs_var_undefined",
     "formal_langs_var_reassign_var",
     "formal_langs_var_reassign_const",
-
     "formal_langs:v2",
     "formal_langs:v4",
     "formal_langs:v6",
-
     "formal_langs_cube:v2",
     "formal_langs_cube:v4",
     "formal_langs_cube:v6",
-
     "formal_langs_k_dyck:k1",
     "formal_langs_k_dyck:k2",
     "formal_langs_k_dyck:k3",
     "formal_langs_k_dyck:k4",
     "formal_langs_k_dyck:k5",
     "formal_langs_k_dyck:k6",
-
     "formal_langs_k_shuffle_dyck:k1",
     "formal_langs_k_shuffle_dyck:k2",
     "formal_langs_k_shuffle_dyck:k3",
     "formal_langs_k_shuffle_dyck:k4",
     "formal_langs_k_shuffle_dyck:k5",
     "formal_langs_k_shuffle_dyck:k6",
-
     "formal_langs_reverse_copy",
     "formal_langs_sort",
     "formal_langs_char_shift_1",
@@ -109,11 +106,14 @@ BASE_HARNESS_OVERRIDES = [
     ("provider.tokenizer", "allenai/Olmo-3-1025-7B"),
 ]
 
+CUSTOM_CONFIG_HARNESS_OVERRIDES = [
+    ("provider.trust_remote_code", "true"),
+]
+
 GDN_HARNESS_OVERRIDES = [
     # The GDN conversion script writes a PureGDN config, but the weights follow
     # the OLMo Hybrid HF layout. Use vLLM's native OLMo Hybrid implementation
     # instead of the generic Transformers backend.
-    ("provider.trust_remote_code", "true"),
     ("provider.kwargs.hf_overrides", '{"architectures":["OlmoHybridForCausalLM"]}'),
 ]
 
@@ -183,6 +183,8 @@ def build_command(
     ]
     if revision is not None:
         harness_overrides.append(("provider.revision", revision))
+    if model_name in ["gdn", "gdn+", "transformer-275M"]:
+        harness_overrides.extend(CUSTOM_CONFIG_HARNESS_OVERRIDES)
     if model_name in ["gdn", "gdn+"]:
         harness_overrides.extend(GDN_HARNESS_OVERRIDES)
     if model_name == "hybrid-small":
