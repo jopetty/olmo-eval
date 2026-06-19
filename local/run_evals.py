@@ -113,6 +113,18 @@ GDN_HARNESS_OVERRIDES = [
     ("provider.kwargs.hf_overrides", '{"architectures":["OlmoHybridForCausalLM"]}'),
 ]
 
+HYBRID_SMALL_HARNESS_OVERRIDES = [
+    ("provider.kind", "vllm"),
+    ("provider.package", "wheel"),
+    ("provider.kwargs.mamba_ssm_cache_dtype", "float32"),
+    ("provider.kwargs.attention_backend", "FLASH_ATTN"),
+]
+
+HYBRID_SMALL_IMAGE = "yashasbls/olmo-eval-vllm-g79d31a3f9-tch2100cu128-2026-05-23"
+HYBRID_SMALL_ENVS = [
+    ("VLLM_ALLOW_LONG_MAX_MODEL_LEN", "1"),
+]
+
 SECRET_ENVS = [
     "JACKSONP_HF_TOKEN:HF_TOKEN",
     "jacksonp_GITHUB_TOKEN:GITHUB_TOKEN",
@@ -169,6 +181,8 @@ def build_command(
         harness_overrides.append(("provider.revision", revision))
     if model_name in ["gdn", "gdn+"]:
         harness_overrides.extend(GDN_HARNESS_OVERRIDES)
+    if model_name == "hybrid-small":
+        harness_overrides.extend(HYBRID_SMALL_HARNESS_OVERRIDES)
 
     for key, value in harness_overrides:
         cmd.extend(["-o", f"{key}={value.replace('{num_gpus}', str(num_gpus))}"])
@@ -194,6 +208,10 @@ def build_command(
             "--inspect",
         ]
     )
+    if model_name == "hybrid-small":
+        cmd.extend(["--image", HYBRID_SMALL_IMAGE])
+        for key, value in HYBRID_SMALL_ENVS:
+            cmd.extend(["--env", f"{key}={value}"])
     for secret_env in SECRET_ENVS:
         cmd.extend(["--secret-env", secret_env])
     cmd.extend(["--no-follow", "-y"])
