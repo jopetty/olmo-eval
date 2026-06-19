@@ -117,6 +117,12 @@ GDN_HARNESS_OVERRIDES = [
     ("provider.kwargs.hf_overrides", '{"architectures":["OlmoHybridForCausalLM"]}'),
 ]
 
+TRANSFORMER_275M_HARNESS_OVERRIDES = [
+    # The checkpoint config advertises a custom class name, but the weights use
+    # the standard OLMo 3 transformer layout that vLLM supports natively.
+    ("provider.kwargs.hf_overrides", '{"architectures":["Olmo3ForCausalLM"]}'),
+]
+
 HYBRID_SMALL_HARNESS_OVERRIDES = [
     ("provider.kind", "vllm"),
     ("provider.package", "wheel"),
@@ -187,6 +193,8 @@ def build_command(
         harness_overrides.extend(CUSTOM_CONFIG_HARNESS_OVERRIDES)
     if model_name in ["gdn", "gdn+"]:
         harness_overrides.extend(GDN_HARNESS_OVERRIDES)
+    if model_name == "transformer-275M":
+        harness_overrides.extend(TRANSFORMER_275M_HARNESS_OVERRIDES)
     if model_name == "hybrid-small":
         harness_overrides.extend(HYBRID_SMALL_HARNESS_OVERRIDES)
 
