@@ -26,6 +26,9 @@ MODEL_ROOTS = {
     ),
     "hybrid-small": Path(
         "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-small-Cx100/275M/"
+    ),
+    "transformer-275M": Path(
+        "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/transformer-small-Cx100/275M/"
     )
 }
 
@@ -41,7 +44,8 @@ CHECKPOINTS = {
     "transformer": {step: MODEL_ROOTS["transformer"] / f"step{step}/" for step in STEPS_A},
     "gdn": {step: MODEL_ROOTS["gdn"] / f"step{step}/" for step in STEPS_B},
     "gdn+": {step: MODEL_ROOTS["gdn+"] / f"step{step}/" for step in STEPS_B},
-    "hybrid-small": {step: MODEL_ROOTS["hybrid-small"] / f"step{step}/" for step in STEPS_C}
+    "hybrid-small": {step: MODEL_ROOTS["hybrid-small"] / f"step{step}/" for step in STEPS_C},
+    "transformer-275M": {step: MODEL_ROOTS["transformer-275M"] / f"step{step}/" for step in STEPS_C},
 }
 
 OLMO_3_7B_BASE_ID = "allenai/Olmo-3-1025-7B"
@@ -137,7 +141,7 @@ def resolve_internal_checkpoint(model: str, checkpoint: int) -> int:
         (checkpoint in STEPS_A and checkpoint in STEPS_B)
         or (checkpoint in STEPS_A and model in ["hybrid", "transformer"])
         or (checkpoint in STEPS_B and model in ["mamba", "gdn", "gdn+"])
-        or (checkpoint in STEPS_C and model in ["hybrid-small"])
+        or (checkpoint in STEPS_C and model in ["hybrid-small", "transformer-275M"])
     ):
         return checkpoint
     if checkpoint in STEPS_A:
@@ -234,7 +238,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        choices=["transformer", "hybrid", "hybrid-small", "gdn", "gdn+"],
+        choices=["transformer", "transformer-275M", "hybrid", "hybrid-small", "gdn", "gdn+"],
         default="transformer",
         help="Model architecture to use.",
     )
