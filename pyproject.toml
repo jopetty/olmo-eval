@@ -44,7 +44,7 @@ Issues = "https://github.com/allenai/olmo-eval/issues"
 
 [project.optional-dependencies]
 hf = [
-    "transformers @ git+https://github.com/YashasSamaga/transformers.git",
+    "transformers>=5.7.0",
 ]
 vllm = [
     # vllm + its companions are Linux/CUDA-only; skip on macOS so the lockfile
