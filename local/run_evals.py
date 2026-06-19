@@ -88,15 +88,6 @@ TASKS = [
     "formal_langs_char_shift_5",
 ]
 
-# should monoids/nominals use only transpositions
-# flip-flop moniod? = iterative kv-building w/ most-recent write
-# nominals = memory/non-associated recall
-# monoisa = state trakcing
-#
-# dyck 1-2-4-8, shuffle dyck
-#
-# extra standard induction head tasks, interesting if these only appear after the base tasks appear
-
 BASE_HARNESS_OVERRIDES = [
     ("provider.num_instances", "{num_gpus}"),
     ("provider.kwargs.enforce_eager", "true"),
