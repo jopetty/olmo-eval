@@ -118,9 +118,9 @@ GDN_HARNESS_OVERRIDES = [
 ]
 
 TRANSFORMER_275M_HARNESS_OVERRIDES = [
-    # The checkpoint config advertises a custom class name, but the weights use
-    # the standard OLMo 3 transformer layout that vLLM supports natively.
-    ("provider.kwargs.hf_overrides", '{"architectures":["Olmo3ForCausalLM"]}'),
+    # The checkpoint config advertises a custom class name. Use vLLM's generic
+    # Transformers backend so it can load the checkpoint's custom config class.
+    ("provider.kwargs.hf_overrides", '{"architectures":["TransformersForCausalLM"]}'),
 ]
 
 HYBRID_SMALL_HARNESS_OVERRIDES = [
