@@ -30,6 +30,9 @@ MODEL_ROOTS = {
     "transformer-275M": Path(
         "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/transformer-small-Cx100/275M/"
     ),
+    "hybrid-275M-aperiodic-sup": Path(
+        "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-aperiodic_supervised_n10000_v26_a50_m64_z1p2_s3-Cx8/275M"
+    )
 }
 
 # hybrid-gdn and baseline models use the same step numbers; others use a very slightly different
@@ -37,6 +40,7 @@ MODEL_ROOTS = {
 STEPS_A = [0, 7320, 8134, 15454, 16268, 30910, 32537, 61819, 65073, 123639, 130000, 130147]
 STEPS_B = [0, 7321, 8135, 15455, 16269, 30911, 32538, 61823, 65077, 123646, 130000, 130154]
 STEPS_C = [0, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 100000, 128000, 161186]
+STEPS_D = [0, 2901, 3224, 6124, 6447]
 
 
 CHECKPOINTS = {
@@ -47,6 +51,9 @@ CHECKPOINTS = {
     "hybrid-small": {step: MODEL_ROOTS["hybrid-small"] / f"step{step}/" for step in STEPS_C},
     "transformer-275M": {
         step: MODEL_ROOTS["transformer-275M"] / f"step{step}/" for step in STEPS_C
+    },
+    "hybrid-275M-aperiodic-sup": {
+        step: MODEL_ROOTS["hybrid-275M-aperiodic-sup"] / f"step{step}/" for step in STEPS_D
     },
 }
 
@@ -148,6 +155,7 @@ def resolve_internal_checkpoint(model: str, checkpoint: int) -> int:
         or (checkpoint in STEPS_A and model in ["hybrid", "transformer"])
         or (checkpoint in STEPS_B and model in ["mamba", "gdn", "gdn+"])
         or (checkpoint in STEPS_C and model in ["hybrid-small", "transformer-275M"])
+        or (checkpoint in STEPS_D and model in ["hybrid-275M-aperiodic-sup"])
     ):
         return checkpoint
     if checkpoint in STEPS_A:
@@ -195,7 +203,7 @@ def build_command(
         harness_overrides.extend(GDN_HARNESS_OVERRIDES)
     if model_name == "transformer-275M":
         harness_overrides.extend(TRANSFORMER_275M_HARNESS_OVERRIDES)
-    if model_name == "hybrid-small":
+    if model_name in ["hybrid-small", "hybrid-275M-aperiodic-sup"]:
         harness_overrides.extend(HYBRID_SMALL_HARNESS_OVERRIDES)
 
     for key, value in harness_overrides:
@@ -222,7 +230,7 @@ def build_command(
             "--inspect",
         ]
     )
-    if model_name == "hybrid-small":
+    if model_name in ["hybrid-small", "hybrid-275M-aperiodic-sup"]:
         cmd.extend(["--image", HYBRID_SMALL_IMAGE])
         for key, value in HYBRID_SMALL_ENVS:
             cmd.extend(["--env", f"{key}={value}"])
@@ -248,7 +256,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        choices=["transformer", "transformer-275M", "hybrid", "hybrid-small", "gdn", "gdn+"],
+        choices=["transformer", "transformer-275M", "hybrid", "hybrid-small", "hybrid-275M-aperiodic-sup", "gdn", "gdn+"],
         default="transformer",
         help="Model architecture to use.",
     )
