@@ -32,6 +32,21 @@ MODEL_ROOTS = {
     ),
     "hybrid-275M-aperiodic-sup": Path(
         "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-aperiodic_supervised_n10000_v26_a50_m64_z1p2_s3-Cx8/275M"
+    ),
+    "hybrid-275M0-aperiodic-unsup": Path(
+        "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-aperiodic_unsupervised_n10000_v26_a50_m64_z1p2_s2-Cx8/275M"
+    ),
+    "hybrid-275M-periodic-sup": Path(
+        "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-periodic_supervised_n10000_v26_a50_m64_z1p2_s5-Cx8/275M"
+    ),
+    "hybrid-275M-periodic-unsup": Path(
+        "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-periodic_unsupervised_n10000_v26_a50_m64_z1p2_s4-Cx8/275M"
+    ),
+    "hybrid-275M-r-trivial-sup": Path(
+        "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-r-trivial_supervised_n10000_v26_a50_m64_z1p2_s1-Cx8/275M"
+    ),
+    "hybrid-275M-r-trivial-unsup": Path(
+        "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-r-trivial_unsupervised_n10000_v26_a50_m64_z1p2_s0-Cx8/275M"
     )
 }
 
@@ -54,6 +69,21 @@ CHECKPOINTS = {
     },
     "hybrid-275M-aperiodic-sup": {
         step: MODEL_ROOTS["hybrid-275M-aperiodic-sup"] / f"step{step}/" for step in STEPS_D
+    },
+    "hybrid-275M-aperiodic-unsup": {
+        step: MODEL_ROOTS["hybrid-275M-aperiodic-unsup"] / f"step{step}/" for step in STEPS_D
+    },
+    "hybrid-275M-periodic-sup": {
+        step: MODEL_ROOTS["hybrid-275M-periodic-sup"] / f"step{step}/" for step in STEPS_D
+    },
+    "hybrid-275M-periodic-unsup": {
+        step: MODEL_ROOTS["hybrid-275M-periodic-unsup"] / f"step{step}/" for step in STEPS_D
+    },
+    "hybrid-275M-r-trivial-sup": {
+        step: MODEL_ROOTS["hybrid-275M-r-trivial-sup"] / f"step{step}/" for step in STEPS_D
+    },
+    "hybrid-275M-r-trivial-unsup": {
+        step: MODEL_ROOTS["hybrid-275M-r-trivial-unsup"] / f"step{step}/" for step in STEPS_D
     },
 }
 
@@ -155,7 +185,14 @@ def resolve_internal_checkpoint(model: str, checkpoint: int) -> int:
         or (checkpoint in STEPS_A and model in ["hybrid", "transformer"])
         or (checkpoint in STEPS_B and model in ["mamba", "gdn", "gdn+"])
         or (checkpoint in STEPS_C and model in ["hybrid-small", "transformer-275M"])
-        or (checkpoint in STEPS_D and model in ["hybrid-275M-aperiodic-sup"])
+        or (checkpoint in STEPS_D and model in [
+            "hybrid-275M-aperiodic-sup",
+            "hybrid-275M-aperiodic-unsup",
+            "hybrid-275M-periodic-sup",
+            "hybrid-275M-periodic-unsup",
+            "hybrid-275M-r-trivial-sup",
+            "hybrid-275M-r-trivial-unsup"
+        ])
     ):
         return checkpoint
     if checkpoint in STEPS_A:
@@ -203,7 +240,15 @@ def build_command(
         harness_overrides.extend(GDN_HARNESS_OVERRIDES)
     if model_name == "transformer-275M":
         harness_overrides.extend(TRANSFORMER_275M_HARNESS_OVERRIDES)
-    if model_name in ["hybrid-small", "hybrid-275M-aperiodic-sup"]:
+    if model_name in [
+        "hybrid-small",
+        "hybrid-275M-aperiodic-sup",
+        # "hybrid-275M-aperiodic-unsup",
+        "hybrid-275M-periodic-sup",
+        "hybrid-275M-periodic-unsup",
+        "hybrid-275M-r-trivial-sup",
+        # "hybrid-275M-r-trivial-unsup"
+    ]:
         harness_overrides.extend(HYBRID_SMALL_HARNESS_OVERRIDES)
 
     for key, value in harness_overrides:
@@ -230,7 +275,15 @@ def build_command(
             "--inspect",
         ]
     )
-    if model_name in ["hybrid-small", "hybrid-275M-aperiodic-sup"]:
+    if model_name in [
+        "hybrid-small",
+        "hybrid-275M-aperiodic-sup",
+        "hybrid-275M-aperiodic-unsup",
+        "hybrid-275M-periodic-sup",
+        "hybrid-275M-periodic-unsup",
+        "hybrid-275M-r-trivial-sup",
+        "hybrid-275M-r-trivial-unsup"
+    ]:
         cmd.extend(["--image", HYBRID_SMALL_IMAGE])
         for key, value in HYBRID_SMALL_ENVS:
             cmd.extend(["--env", f"{key}={value}"])
@@ -256,7 +309,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         type=str,
-        choices=["transformer", "transformer-275M", "hybrid", "hybrid-small", "hybrid-275M-aperiodic-sup", "gdn", "gdn+"],
+        choices=[
+            "transformer",
+            "transformer-275M",
+            "hybrid",
+            "hybrid-small",
+            "hybrid-275M-aperiodic-sup",
+            "hybrid-275M-aperiodic-unsup",
+            "hybrid-275M-periodic-sup",
+            "hybrid-275M-periodic-unsup",
+            "hybrid-275M-r-trivial-sup",
+            "hybrid-275M-r-trivial-unsup",
+            "gdn",
+            "gdn+"
+        ],
         default="transformer",
         help="Model architecture to use.",
     )
