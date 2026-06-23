@@ -33,7 +33,7 @@ MODEL_ROOTS = {
     "hybrid-275M-aperiodic-sup": Path(
         "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-aperiodic_supervised_n10000_v26_a50_m64_z1p2_s3-Cx8/275M"
     ),
-    "hybrid-275M0-aperiodic-unsup": Path(
+    "hybrid-275M-aperiodic-unsup": Path(
         "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-aperiodic_unsupervised_n10000_v26_a50_m64_z1p2_s2-Cx8/275M"
     ),
     "hybrid-275M-periodic-sup": Path(
