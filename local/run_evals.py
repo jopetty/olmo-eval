@@ -243,11 +243,11 @@ def build_command(
     if model_name in [
         "hybrid-small",
         "hybrid-275M-aperiodic-sup",
-        # "hybrid-275M-aperiodic-unsup",
+        "hybrid-275M-aperiodic-unsup",
         "hybrid-275M-periodic-sup",
         "hybrid-275M-periodic-unsup",
         "hybrid-275M-r-trivial-sup",
-        # "hybrid-275M-r-trivial-unsup"
+        "hybrid-275M-r-trivial-unsup"
     ]:
         harness_overrides.extend(HYBRID_SMALL_HARNESS_OVERRIDES)
 
@@ -315,11 +315,11 @@ def parse_args() -> argparse.Namespace:
             "hybrid",
             "hybrid-small",
             "hybrid-275M-aperiodic-sup",
-            "hybrid-275M-aperiodic-unsup",
+            # "hybrid-275M-aperiodic-unsup",
             "hybrid-275M-periodic-sup",
             "hybrid-275M-periodic-unsup",
             "hybrid-275M-r-trivial-sup",
-            "hybrid-275M-r-trivial-unsup",
+            # "hybrid-275M-r-trivial-unsup",
             "gdn",
             "gdn+"
         ],
