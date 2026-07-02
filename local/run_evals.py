@@ -47,7 +47,7 @@ MODEL_ROOTS = {
     ),
     "hybrid-275M-r-trivial-unsup": Path(
         "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-r-trivial_unsupervised_n10000_v26_a50_m64_z1p2_s0-Cx8/275M"
-    )
+    ),
 }
 
 # hybrid-gdn and baseline models use the same step numbers; others use a very slightly different
@@ -185,14 +185,18 @@ def resolve_internal_checkpoint(model: str, checkpoint: int) -> int:
         or (checkpoint in STEPS_A and model in ["hybrid", "transformer"])
         or (checkpoint in STEPS_B and model in ["mamba", "gdn", "gdn+"])
         or (checkpoint in STEPS_C and model in ["hybrid-small", "transformer-275M"])
-        or (checkpoint in STEPS_D and model in [
-            "hybrid-275M-aperiodic-sup",
-            "hybrid-275M-aperiodic-unsup",
-            "hybrid-275M-periodic-sup",
-            "hybrid-275M-periodic-unsup",
-            "hybrid-275M-r-trivial-sup",
-            "hybrid-275M-r-trivial-unsup"
-        ])
+        or (
+            checkpoint in STEPS_D
+            and model
+            in [
+                "hybrid-275M-aperiodic-sup",
+                "hybrid-275M-aperiodic-unsup",
+                "hybrid-275M-periodic-sup",
+                "hybrid-275M-periodic-unsup",
+                "hybrid-275M-r-trivial-sup",
+                "hybrid-275M-r-trivial-unsup",
+            ]
+        )
     ):
         return checkpoint
     if checkpoint in STEPS_A:
@@ -247,7 +251,7 @@ def build_command(
         "hybrid-275M-periodic-sup",
         "hybrid-275M-periodic-unsup",
         "hybrid-275M-r-trivial-sup",
-        "hybrid-275M-r-trivial-unsup"
+        "hybrid-275M-r-trivial-unsup",
     ]:
         harness_overrides.extend(HYBRID_SMALL_HARNESS_OVERRIDES)
 
@@ -282,7 +286,7 @@ def build_command(
         "hybrid-275M-periodic-sup",
         "hybrid-275M-periodic-unsup",
         "hybrid-275M-r-trivial-sup",
-        "hybrid-275M-r-trivial-unsup"
+        "hybrid-275M-r-trivial-unsup",
     ]:
         cmd.extend(["--image", HYBRID_SMALL_IMAGE])
         for key, value in HYBRID_SMALL_ENVS:
@@ -297,6 +301,12 @@ def resolve_checkpoints(model: str, requested_checkpoints: list[int] | None) -> 
     if requested_checkpoints is not None:
         return requested_checkpoints
     return list(CHECKPOINTS[model].keys())
+
+
+def resolve_tasks(requested_tasks: list[str] | None) -> list[str]:
+    if requested_tasks is not None:
+        return requested_tasks
+    return TASKS
 
 
 def build_internal_model_path(model: str, checkpoint: int) -> str:
@@ -321,7 +331,7 @@ def parse_args() -> argparse.Namespace:
             "hybrid-275M-r-trivial-sup",
             # "hybrid-275M-r-trivial-unsup",
             "gdn",
-            "gdn+"
+            "gdn+",
         ],
         default="transformer",
         help="Model architecture to use.",
@@ -349,6 +359,11 @@ def parse_args() -> argparse.Namespace:
         type=str,
         help="Hugging Face revision, branch, tag, or checkpoint to use with --hf-model.",
     )
+    parser.add_argument(
+        "--tasks",
+        nargs="+",
+        help="Task or suite specs to run. Defaults to the script's TASKS list.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     if args.hf_revision is not None and args.hf_model is None:
@@ -360,13 +375,14 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    tasks = resolve_tasks(args.tasks)
 
     if args.hf_model is not None:
         commands = [
             build_command(
                 args.hf_model,
                 "hf",
-                TASKS,
+                tasks,
                 args.gpus,
                 revision=args.hf_revision,
                 tokenizer=args.hf_model,
@@ -378,7 +394,7 @@ def main() -> None:
             build_command(
                 build_internal_model_path(args.model, checkpoint),
                 args.model,
-                TASKS,
+                tasks,
                 args.gpus,
             )
             for checkpoint in checkpoints
