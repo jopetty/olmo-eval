@@ -58,10 +58,20 @@ FORMAL_LANG_CUBE_BINDING_TASKS = (
     "formal_langs_cube_reassign_var",
     "formal_langs_cube_reassign_const",
 )
+FORMAL_LANG_CUBE_ZERO_SHOT_DESCRIPTION_VARIANT = "0shot_desc"
+FORMAL_LANG_CUBE_DESCRIBED_BINDING_TASKS = tuple(
+    f"{task_name}:{FORMAL_LANG_CUBE_ZERO_SHOT_DESCRIPTION_VARIANT}"
+    for task_name in FORMAL_LANG_CUBE_BINDING_TASKS
+)
 FORMAL_LANG_BINDING_TASKS = (*FORMAL_LANG_SYMBOLIC_BINDING_TASKS, *FORMAL_LANG_CUBE_BINDING_TASKS)
 FORMAL_LANG_VARIABLE_COUNT_TASKS = tuple(
     f"{task_name}:v{num_variables}"
     for task_name in FORMAL_LANG_BINDING_TASKS
+    for num_variables in BINDING_VARIABLE_COUNTS
+)
+FORMAL_LANG_CUBE_DESCRIBED_VARIABLE_COUNT_TASKS = tuple(
+    f"{task_name}:v{num_variables}"
+    for task_name in FORMAL_LANG_CUBE_DESCRIBED_BINDING_TASKS
     for num_variables in BINDING_VARIABLE_COUNTS
 )
 FORMAL_LANG_DYCK_PARENTHESIS_TYPE_TASKS = tuple(
@@ -72,6 +82,11 @@ FORMAL_LANG_DYCK_PARENTHESIS_TYPE_TASKS = tuple(
 FORMAL_LANG_ASSIGNMENT_COUNT_TASKS = tuple(
     f"{task_name}:a{min_assignments}-{max_assignments}"
     for task_name in FORMAL_LANG_BINDING_TASKS
+    for min_assignments, max_assignments in ASSIGNMENT_COUNT_BINS
+)
+FORMAL_LANG_CUBE_DESCRIBED_ASSIGNMENT_COUNT_TASKS = tuple(
+    f"{task_name}:a{min_assignments}-{max_assignments}"
+    for task_name in FORMAL_LANG_CUBE_DESCRIBED_BINDING_TASKS
     for min_assignments, max_assignments in ASSIGNMENT_COUNT_BINS
 )
 FORMAL_LANG_TASKS = (
@@ -120,6 +135,16 @@ def _format_query(doc: dict[str, Any]) -> str:
     return f"{_format_text(doc['input'])}{separator}"
 
 
+CUBE_ZERO_SHOT_DESCRIPTION = (
+    "Task: Track the colors of cubes as paint commands are applied in order. "
+    "A command can paint a cube a named color, or paint it the same color as another cube. "
+    "A same-color command copies the referenced cube's current color at that point. "
+    "Painting a cube overwrites its previous color. "
+    "If the referenced cube is unpainted, the target cube becomes unpainted. "
+    "Answer the question with the final color, or unpainted if the cube has no color."
+)
+
+
 def _distractor_sort_key(key: str) -> tuple[int, int | str]:
     suffix = key.removeprefix("distractor_")
     if suffix.isdigit():
@@ -158,6 +183,7 @@ class FormalLanguageCompletion(Task):
     num_variables: int | None = None
     num_parenthesis_types: int | None = None
     assignment_count_range: tuple[int, int] | None = None
+    prompt_description: str | None = None
 
     @property
     def instances(self) -> Iterator[Instance]:
@@ -258,7 +284,11 @@ class FormalLanguageCompletion(Task):
         gold_idx = choices.index(correct)
 
         fewshot_examples = [_format_example(fewshot_doc) for fewshot_doc in fewshot_docs or []]
-        question = "\n".join([*fewshot_examples, _format_query(doc)])
+        question_parts = [*fewshot_examples, _format_query(doc)]
+        if self.prompt_description is None:
+            question = "\n".join(question_parts)
+        else:
+            question = "\n\n".join((self.prompt_description, "\n".join(question_parts)))
 
         return Instance(
             question=question,
@@ -274,6 +304,11 @@ class FormalLanguageCompletion(Task):
                 "correct": correct,
                 "distractors": tuple(choice for choice in choices if choice != correct),
                 "fewshot_examples": fewshot_examples,
+                **(
+                    {"prompt_description": self.prompt_description}
+                    if self.prompt_description is not None
+                    else {}
+                ),
                 **({"n": doc["n"]} if "n" in doc else {}),
                 **({"input_length": doc["input_length"]} if "input_length" in doc else {}),
                 **({"k": doc["k"]} if "k" in doc else {}),
@@ -415,6 +450,30 @@ class FormalLanguageCubeReassignConst(FormalLanguageCubeCompletion):
     fewshot_source = DataSource(FORMAL_LANGS_REPO, split="train", subset="cube-reassign-const")
 
 
+@register(f"formal_langs_cube_unique:{FORMAL_LANG_CUBE_ZERO_SHOT_DESCRIPTION_VARIANT}")
+class FormalLanguageCubeUniqueZeroShotDescription(FormalLanguageCubeUnique):
+    num_fewshot = 0
+    prompt_description = CUBE_ZERO_SHOT_DESCRIPTION
+
+
+@register(f"formal_langs_cube_undefined:{FORMAL_LANG_CUBE_ZERO_SHOT_DESCRIPTION_VARIANT}")
+class FormalLanguageCubeUndefinedZeroShotDescription(FormalLanguageCubeUndefined):
+    num_fewshot = 0
+    prompt_description = CUBE_ZERO_SHOT_DESCRIPTION
+
+
+@register(f"formal_langs_cube_reassign_var:{FORMAL_LANG_CUBE_ZERO_SHOT_DESCRIPTION_VARIANT}")
+class FormalLanguageCubeReassignVarZeroShotDescription(FormalLanguageCubeReassignVar):
+    num_fewshot = 0
+    prompt_description = CUBE_ZERO_SHOT_DESCRIPTION
+
+
+@register(f"formal_langs_cube_reassign_const:{FORMAL_LANG_CUBE_ZERO_SHOT_DESCRIPTION_VARIANT}")
+class FormalLanguageCubeReassignConstZeroShotDescription(FormalLanguageCubeReassignConst):
+    num_fewshot = 0
+    prompt_description = CUBE_ZERO_SHOT_DESCRIPTION
+
+
 def _register_binding_variable_count_tasks() -> None:
     task_classes = {
         "formal_langs_var_unique": FormalLanguageVarUnique,
@@ -493,6 +552,72 @@ def _register_assignment_count_tasks() -> None:
             register(f"{task_name}:a{min_assignments}-{max_assignments}")(cls)
 
 
+def _register_cube_described_variable_count_tasks() -> None:
+    task_classes = {
+        f"formal_langs_cube_unique:{FORMAL_LANG_CUBE_ZERO_SHOT_DESCRIPTION_VARIANT}": (
+            FormalLanguageCubeUniqueZeroShotDescription
+        ),
+        f"formal_langs_cube_undefined:{FORMAL_LANG_CUBE_ZERO_SHOT_DESCRIPTION_VARIANT}": (
+            FormalLanguageCubeUndefinedZeroShotDescription
+        ),
+        f"formal_langs_cube_reassign_var:{FORMAL_LANG_CUBE_ZERO_SHOT_DESCRIPTION_VARIANT}": (
+            FormalLanguageCubeReassignVarZeroShotDescription
+        ),
+        f"formal_langs_cube_reassign_const:{FORMAL_LANG_CUBE_ZERO_SHOT_DESCRIPTION_VARIANT}": (
+            FormalLanguageCubeReassignConstZeroShotDescription
+        ),
+    }
+
+    for task_name, base_class in task_classes.items():
+        for num_variables in BINDING_VARIABLE_COUNTS:
+            class_name = f"{base_class.__name__}V{num_variables}"
+            cls = type(
+                class_name,
+                (base_class,),
+                {
+                    "__module__": __name__,
+                    "__qualname__": class_name,
+                    "num_variables": num_variables,
+                },
+            )
+            globals()[class_name] = cls
+            register(f"{task_name}:v{num_variables}")(cls)
+
+
+def _register_cube_described_assignment_count_tasks() -> None:
+    task_classes = {
+        f"formal_langs_cube_unique:{FORMAL_LANG_CUBE_ZERO_SHOT_DESCRIPTION_VARIANT}": (
+            FormalLanguageCubeUniqueZeroShotDescription
+        ),
+        f"formal_langs_cube_undefined:{FORMAL_LANG_CUBE_ZERO_SHOT_DESCRIPTION_VARIANT}": (
+            FormalLanguageCubeUndefinedZeroShotDescription
+        ),
+        f"formal_langs_cube_reassign_var:{FORMAL_LANG_CUBE_ZERO_SHOT_DESCRIPTION_VARIANT}": (
+            FormalLanguageCubeReassignVarZeroShotDescription
+        ),
+        f"formal_langs_cube_reassign_const:{FORMAL_LANG_CUBE_ZERO_SHOT_DESCRIPTION_VARIANT}": (
+            FormalLanguageCubeReassignConstZeroShotDescription
+        ),
+    }
+
+    for task_name, base_class in task_classes.items():
+        for min_assignments, max_assignments in ASSIGNMENT_COUNT_BINS:
+            class_name = f"{base_class.__name__}A{min_assignments}To{max_assignments}"
+            cls = type(
+                class_name,
+                (base_class,),
+                {
+                    "__module__": __name__,
+                    "__qualname__": class_name,
+                    "assignment_count_range": (min_assignments, max_assignments),
+                },
+            )
+            globals()[class_name] = cls
+            register(f"{task_name}:a{min_assignments}-{max_assignments}")(cls)
+
+
 _register_binding_variable_count_tasks()
 _register_dyck_parenthesis_type_tasks()
 _register_assignment_count_tasks()
+_register_cube_described_variable_count_tasks()
+_register_cube_described_assignment_count_tasks()

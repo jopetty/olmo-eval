@@ -6,6 +6,7 @@ from olmo_eval.evals.tasks.formal_langs import (
     FORMAL_LANG_BINDING_TASKS,
     FORMAL_LANG_CORE_TASKS,
     FORMAL_LANG_CUBE_BINDING_TASKS,
+    FORMAL_LANG_CUBE_DESCRIBED_BINDING_TASKS,
     FORMAL_LANG_DYCK_TASKS,
     FORMAL_LANG_TASKS,
 )
@@ -94,6 +95,52 @@ for _min_assignments, _max_assignments in ASSIGNMENT_COUNT_BINS:
         aggregation=AggregationStrategy.AVERAGE,
         description=(
             "Cube-painting formal-language variable-binding tasks filtered to "
+            f"{_min_assignments}-{_max_assignments} assignments."
+        ),
+    )
+
+make_suite(
+    name="formal_langs_cube:0shot_desc",
+    tasks=(
+        *FORMAL_LANG_CUBE_DESCRIBED_BINDING_TASKS,
+        *(
+            f"{task_name}:v{num_variables}"
+            for task_name in FORMAL_LANG_CUBE_DESCRIBED_BINDING_TASKS
+            for num_variables in BINDING_VARIABLE_COUNTS
+        ),
+    ),
+    aggregation=AggregationStrategy.AVERAGE,
+    description=(
+        "Zero-shot cube-painting formal-language variable-binding tasks "
+        "with a textual task description."
+    ),
+)
+
+for _num_variables in BINDING_VARIABLE_COUNTS:
+    make_suite(
+        name=f"formal_langs_cube:0shot_desc:v{_num_variables}",
+        tasks=tuple(
+            f"{task_name}:v{_num_variables}"
+            for task_name in FORMAL_LANG_CUBE_DESCRIBED_BINDING_TASKS
+        ),
+        aggregation=AggregationStrategy.AVERAGE,
+        description=(
+            "Zero-shot cube-painting formal-language variable-binding tasks "
+            f"with a textual task description, filtered to {_num_variables} variables."
+        ),
+    )
+
+for _min_assignments, _max_assignments in ASSIGNMENT_COUNT_BINS:
+    make_suite(
+        name=f"formal_langs_cube:0shot_desc:a{_min_assignments}-{_max_assignments}",
+        tasks=tuple(
+            f"{task_name}:a{_min_assignments}-{_max_assignments}"
+            for task_name in FORMAL_LANG_CUBE_DESCRIBED_BINDING_TASKS
+        ),
+        aggregation=AggregationStrategy.AVERAGE,
+        description=(
+            "Zero-shot cube-painting formal-language variable-binding tasks "
+            "with a textual task description, filtered to "
             f"{_min_assignments}-{_max_assignments} assignments."
         ),
     )
