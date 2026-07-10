@@ -7,62 +7,163 @@ GROUP = "jacksonp-directly-trained-sensitivity-evals"
 CLUSTER = "ai2/jupiter"
 PRIORITY = "urgent"
 NUM_GPUS = 2
-WORKSPACE = "ai2/linear-rnns"
+WORKSPACE = "ai2/beyond-state"
 BUDGET = "ai2/oe-other"
 
+CHECKPOINT_BASE = Path("/weka/oe-training-default/ai2-llm/checkpoints/jacksonp")
+MODEL_TYPES = ("hybrid", "transformer")
+DATASET_TYPES = ("r-trivial", "aperiodic", "periodic")
+SUPERVISION_LEVELS = (0, 50, 100)
+
+# These are the directly-trained 200M-token runs currently available in the
+# checkpoint store. The omitted combinations do not have corresponding runs.
 MODEL_ROOTS = {
-    "hybrid-275M-aperiodic-sup": Path(
-        "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-aperiodic_supervised_n10000_v26_a50_m64_z1p2_s3-Cx8/275M"
-    ),
-    "hybrid-275M-aperiodic-unsup": Path(
-        "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-aperiodic_unsupervised_n10000_v26_a50_m64_z1p2_s2-Cx8/275M"
-    ),
-    "hybrid-275M-periodic-sup": Path(
-        "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-periodic_supervised_n10000_v26_a50_m64_z1p2_s5-Cx8/275M"
-    ),
-    "hybrid-275M-periodic-unsup": Path(
-        "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-periodic_unsupervised_n10000_v26_a50_m64_z1p2_s4-Cx8/275M"
-    ),
-    "hybrid-275M-r-trivial-sup": Path(
-        "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-r-trivial_supervised_n10000_v26_a50_m64_z1p2_s1-Cx8/275M"
-    ),
-    "hybrid-275M-r-trivial-unsup": Path(
-        "/weka/oe-training-default/ai2-llm/checkpoints/jacksonp/hybrid-r-trivial_unsupervised_n10000_v26_a50_m64_z1p2_s0-Cx8/275M"
-    ),
+    ("hybrid", "aperiodic", 0): CHECKPOINT_BASE
+    / "hybrid-aperiodic_0supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx2"
+    / "60M",
+    ("hybrid", "aperiodic", 100): CHECKPOINT_BASE
+    / "hybrid-aperiodic_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4"
+    / "60M",
+    ("hybrid", "periodic", 0): CHECKPOINT_BASE
+    / "hybrid-periodic_0supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx2"
+    / "60M",
+    ("hybrid", "periodic", 50): CHECKPOINT_BASE
+    / "hybrid-periodic_50supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4"
+    / "60M",
+    ("hybrid", "periodic", 100): CHECKPOINT_BASE
+    / "hybrid-periodic_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4"
+    / "60M",
+    ("hybrid", "r-trivial", 0): CHECKPOINT_BASE
+    / "hybrid-r-trivial_0supervision_n200000000_v26_a50_m64_z1p2_assignments_lt5-Cx2"
+    / "60M",
+    ("hybrid", "r-trivial", 50): CHECKPOINT_BASE
+    / "hybrid-r-trivial_50supervision_n200000000_v26_a50_m64_z1p2_assignments_lt5-Cx2"
+    / "60M",
+    ("hybrid", "r-trivial", 100): CHECKPOINT_BASE
+    / "hybrid-r-trivial_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt5-Cx2"
+    / "60M",
+    ("transformer", "aperiodic", 0): CHECKPOINT_BASE
+    / "transformer-aperiodic_0supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx2"
+    / "60M",
+    ("transformer", "aperiodic", 50): CHECKPOINT_BASE
+    / "transformer-aperiodic_50supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4"
+    / "60M",
+    ("transformer", "aperiodic", 100): CHECKPOINT_BASE
+    / "transformer-aperiodic_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4"
+    / "60M",
+    ("transformer", "periodic", 50): CHECKPOINT_BASE
+    / "transformer-periodic_50supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4"
+    / "60M",
+    ("transformer", "periodic", 100): CHECKPOINT_BASE
+    / "transformer-periodic_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4"
+    / "60M",
+    ("transformer", "r-trivial", 50): CHECKPOINT_BASE
+    / "transformer-r-trivial_50supervision_n200000000_v26_a50_m64_z1p2_assignments_lt5-Cx2"
+    / "60M",
+    ("transformer", "r-trivial", 100): CHECKPOINT_BASE
+    / "transformer-r-trivial_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt5-Cx2"
+    / "60M",
 }
 
-STEPS_STANDARD = [0, 1000, 2000, 4000, 8000, 16000, 32000, 64000, 100000, 128000, 161186]
-STEPS_DIRECT_TRAINED = [0, 2901, 3224, 6124, 6447, 12250, 12895, 24500, 25790, 49000, 51000, 51579]
+CHECKPOINT_STEPS = {
+    ("hybrid", "aperiodic", 0): [0, 2034, 2260, 4294, 4521, 8589, 9000, 9041],
+    ("hybrid", "aperiodic", 100): [
+        0,
+        2034,
+        2260,
+        4294,
+        4521,
+        8589,
+        9041,
+        17177,
+        18000,
+        18082,
+    ],
+    ("hybrid", "periodic", 0): [0, 2034, 2260, 4294, 4521, 8589, 9000, 9041],
+    ("hybrid", "periodic", 50): [
+        0,
+        2034,
+        2260,
+        4294,
+        4521,
+        8589,
+        9041,
+        17177,
+        18000,
+        18082,
+    ],
+    ("hybrid", "periodic", 100): [
+        0,
+        2034,
+        2260,
+        4294,
+        4521,
+        8589,
+        9041,
+        17177,
+        18000,
+        18082,
+    ],
+    ("hybrid", "r-trivial", 0): [0, 2034, 2260, 4294, 4521, 8589, 9000, 9041],
+    ("hybrid", "r-trivial", 50): [0, 2034, 2260, 4294, 4521, 8589, 9000, 9041],
+    ("hybrid", "r-trivial", 100): [0, 2034, 2260, 4294, 4521, 8589, 9000, 9041],
+    ("transformer", "aperiodic", 0): [0, 1971, 2190, 4161, 4381, 8000, 8323, 8762],
+    ("transformer", "aperiodic", 50): [
+        0,
+        1971,
+        2190,
+        4000,
+        4161,
+        4381,
+        8323,
+        8762,
+        16647,
+        17000,
+        17524,
+    ],
+    ("transformer", "aperiodic", 100): [
+        0,
+        1971,
+        2190,
+        4161,
+        4381,
+        8323,
+        8762,
+        16647,
+        17000,
+        17524,
+    ],
+    ("transformer", "periodic", 50): [
+        0,
+        1971,
+        2190,
+        4161,
+        4381,
+        8323,
+        8762,
+        16647,
+        17000,
+        17524,
+    ],
+    ("transformer", "periodic", 100): [
+        0,
+        1971,
+        2190,
+        4161,
+        4381,
+        8323,
+        8762,
+        16647,
+        17000,
+        17524,
+    ],
+    ("transformer", "r-trivial", 50): [0, 1971, 2190, 4161, 4381, 8000, 8323, 8762],
+    ("transformer", "r-trivial", 100): [0, 1971, 2190, 4161, 4381, 8000, 8323, 8762],
+}
 
 CHECKPOINTS = {
-    "transformer-275M": {
-        step: MODEL_ROOTS["transformer-275M"] / f"step{step}/" for step in STEPS_STANDARD
-    },
-    "hybrid-small": {step: MODEL_ROOTS["hybrid-small"] / f"step{step}/" for step in STEPS_STANDARD},
-    "hybrid-275M-aperiodic-sup": {
-        step: MODEL_ROOTS["hybrid-275M-aperiodic-sup"] / f"step{step}/"
-        for step in STEPS_DIRECT_TRAINED
-    },
-    "hybrid-275M-aperiodic-unsup": {
-        step: MODEL_ROOTS["hybrid-275M-aperiodic-unsup"] / f"step{step}/"
-        for step in STEPS_DIRECT_TRAINED
-    },
-    "hybrid-275M-periodic-sup": {
-        step: MODEL_ROOTS["hybrid-275M-periodic-sup"] / f"step{step}/"
-        for step in STEPS_DIRECT_TRAINED
-    },
-    "hybrid-275M-periodic-unsup": {
-        step: MODEL_ROOTS["hybrid-275M-periodic-unsup"] / f"step{step}/"
-        for step in STEPS_DIRECT_TRAINED
-    },
-    "hybrid-275M-r-trivial-sup": {
-        step: MODEL_ROOTS["hybrid-275M-r-trivial-sup"] / f"step{step}/"
-        for step in STEPS_DIRECT_TRAINED
-    },
-    "hybrid-275M-r-trivial-unsup": {
-        step: MODEL_ROOTS["hybrid-275M-r-trivial-unsup"] / f"step{step}/"
-        for step in STEPS_DIRECT_TRAINED
-    },
+    model: {step: MODEL_ROOTS[model] / f"step{step}/" for step in steps}
+    for model, steps in CHECKPOINT_STEPS.items()
 }
 
 OLMO_3_7B_BASE_ID = "allenai/Olmo-3-1025-7B"
@@ -89,7 +190,7 @@ CUSTOM_CONFIG_HARNESS_OVERRIDES = [
     ("provider.trust_remote_code", "true"),
 ]
 
-TRANSFORMER_275M_HARNESS_OVERRIDES = [
+TRANSFORMER_60M_HARNESS_OVERRIDES = [
     ("provider.kwargs.hf_overrides", '{"architectures":["TransformersForCausalLM"]}'),
 ]
 
@@ -118,7 +219,7 @@ def get_model_short_name(model_path: str) -> str:
 
 def build_command(
     model_path: str,
-    model_name: str,
+    model_type: str,
     tasks: list[str],
     num_gpus: int = NUM_GPUS,
 ) -> list[str]:
@@ -130,9 +231,9 @@ def build_command(
     cmd.extend(["-H", "default", "-n", exp_name])
 
     harness_overrides = list(BASE_HARNESS_OVERRIDES)
-    if model_name == "transformer-275M":
+    if model_type == "transformer":
         harness_overrides.extend(CUSTOM_CONFIG_HARNESS_OVERRIDES)
-        harness_overrides.extend(TRANSFORMER_275M_HARNESS_OVERRIDES)
+        harness_overrides.extend(TRANSFORMER_60M_HARNESS_OVERRIDES)
     else:
         harness_overrides.extend(HYBRID_HARNESS_OVERRIDES)
 
@@ -161,7 +262,7 @@ def build_command(
         ]
     )
 
-    if model_name != "transformer-275M":
+    if model_type == "hybrid":
         cmd.extend(["--image", HYBRID_IMAGE])
         for key, value in HYBRID_ENVS:
             cmd.extend(["--env", f"{key}={value}"])
@@ -172,7 +273,26 @@ def build_command(
     return cmd
 
 
-def resolve_checkpoints(model: str, requested_checkpoints: list[int] | None) -> list[int]:
+def resolve_checkpoints(
+    model_type: str,
+    dataset_type: str,
+    supervision: int,
+    requested_checkpoints: list[int] | None,
+    final: bool = False,
+) -> list[int]:
+    model = (model_type, dataset_type, supervision)
+    if model not in CHECKPOINTS:
+        available = ", ".join(
+            f"{model_type}/{dataset}/{level}"
+            for model_type_, dataset, level in MODEL_ROOTS
+            if model_type_ == model_type
+        )
+        raise ValueError(
+            f"No checkpoint is configured for {model_type}/{dataset_type}/{supervision}."
+            f" Available {model_type} combinations: {available}"
+        )
+    if final:
+        return [max(CHECKPOINTS[model])]
     if requested_checkpoints is not None:
         invalid = sorted(set(requested_checkpoints) - set(CHECKPOINTS[model]))
         if invalid:
@@ -182,18 +302,35 @@ def resolve_checkpoints(model: str, requested_checkpoints: list[int] | None) -> 
     return list(CHECKPOINTS[model])
 
 
-def build_internal_model_path(model: str, checkpoint: int) -> str:
+def build_internal_model_path(
+    model_type: str, dataset_type: str, supervision: int, checkpoint: int
+) -> str:
+    model = (model_type, dataset_type, supervision)
     return str(CHECKPOINTS[model][checkpoint])
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--model",
+        "--model-type",
         type=str,
-        choices=sorted(MODEL_ROOTS),
-        default="transformer-275M",
-        help="Directly trained 275M model to evaluate.",
+        choices=MODEL_TYPES,
+        default="transformer",
+        help="Model architecture to evaluate.",
+    )
+    parser.add_argument(
+        "--dataset-type",
+        type=str,
+        choices=DATASET_TYPES,
+        default="aperiodic",
+        help="Dataset variant used to train the model.",
+    )
+    parser.add_argument(
+        "--supervision",
+        type=int,
+        choices=SUPERVISION_LEVELS,
+        default=0,
+        help="Supervision percentage used to train the model.",
     )
     parser.add_argument(
         "--gpus",
@@ -201,12 +338,18 @@ def parse_args() -> argparse.Namespace:
         default=NUM_GPUS,
         help="Number of GPUs per job.",
     )
-    parser.add_argument(
+    checkpoint_group = parser.add_mutually_exclusive_group()
+    checkpoint_group.add_argument(
         "--checkpoints",
         "-c",
         nargs="+",
         type=int,
         help="Checkpoint steps to use. Defaults to all checkpoints for the selected model.",
+    )
+    checkpoint_group.add_argument(
+        "--final",
+        action="store_true",
+        help="Evaluate only the final (largest-step) checkpoint for the selected model.",
     )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
@@ -214,11 +357,22 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    checkpoints = resolve_checkpoints(args.model, args.checkpoints)
+    checkpoints = resolve_checkpoints(
+        args.model_type,
+        args.dataset_type,
+        args.supervision,
+        args.checkpoints,
+        args.final,
+    )
     commands = [
         build_command(
-            build_internal_model_path(args.model, checkpoint),
-            args.model,
+            build_internal_model_path(
+                args.model_type,
+                args.dataset_type,
+                args.supervision,
+                checkpoint,
+            ),
+            args.model_type,
             TASKS,
             args.gpus,
         )
