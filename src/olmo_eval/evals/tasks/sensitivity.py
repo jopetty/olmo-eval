@@ -90,6 +90,8 @@ class SensitivityCompletion(Task):
     data_source = DataSource(SENSITIVITY_REPO, split="train")
     metrics = (LogprobPerTokenMCAccuracyMetric(),)
     num_fewshot = 0
+    limit = 1000
+    seed = 42
     split = Split.TRAIN
 
     file_prefix: str = ""
