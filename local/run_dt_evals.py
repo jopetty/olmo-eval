@@ -208,7 +208,7 @@ HYBRID_HARNESS_OVERRIDES = [
 #     ("provider.trust_remote_code", "true"),
 # ]
 
-# HYBRID_IMAGE = "yashasbls/olmo-eval-vllm-g79d31a3f9-tch2100cu128-2026-05-23"
+HYBRID_IMAGE = "yashasbls/olmo-eval-vllm-g79d31a3f9-tch2100cu128-2026-05-23"
 # HYBRID_ENVS = [
 #     ("VLLM_ALLOW_LONG_MAX_MODEL_LEN", "1"),
 # ]
@@ -280,8 +280,8 @@ def build_command(
         ]
     )
 
-    # if model_type == "hybrid":
-    #     cmd.extend(["--image", HYBRID_IMAGE])
+    if model_type == "hybrid":
+        cmd.extend(["--image", HYBRID_IMAGE])
     #     for key, value in HYBRID_ENVS:
     #         cmd.extend(["--env", f"{key}={value}"])
 
