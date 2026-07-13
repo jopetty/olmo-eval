@@ -199,6 +199,7 @@ HYBRID_HARNESS_OVERRIDES = [
     ("provider.package", "wheel"),
     ("provider.kwargs.mamba_ssm_cache_dtype", "float32"),
     ("provider.kwargs.attention_backend", "FLASH_ATTN"),
+    ("provider.trust_remote_code", "true"),
 ]
 
 HYBRID_IMAGE = "yashasbls/olmo-eval-vllm-g79d31a3f9-tch2100cu128-2026-05-23"
