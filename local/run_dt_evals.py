@@ -195,17 +195,23 @@ TRANSFORMER_60M_HARNESS_OVERRIDES = [
 ]
 
 HYBRID_HARNESS_OVERRIDES = [
-    ("provider.kind", "vllm"),
-    ("provider.package", "wheel"),
-    ("provider.kwargs.mamba_ssm_cache_dtype", "float32"),
-    ("provider.kwargs.attention_backend", "FLASH_ATTN"),
+    ("provider.kind", "hf"),
     ("provider.trust_remote_code", "true"),
+    ("provider.dtype", "bfloat16"),
 ]
 
-HYBRID_IMAGE = "yashasbls/olmo-eval-vllm-g79d31a3f9-tch2100cu128-2026-05-23"
-HYBRID_ENVS = [
-    ("VLLM_ALLOW_LONG_MAX_MODEL_LEN", "1"),
-]
+# HYBRID_HARNESS_OVERRIDES = [
+#     ("provider.kind", "vllm"),
+#     ("provider.package", "wheel"),
+#     ("provider.kwargs.mamba_ssm_cache_dtype", "float32"),
+#     ("provider.kwargs.attention_backend", "FLASH_ATTN"),
+#     ("provider.trust_remote_code", "true"),
+# ]
+
+# HYBRID_IMAGE = "yashasbls/olmo-eval-vllm-g79d31a3f9-tch2100cu128-2026-05-23"
+# HYBRID_ENVS = [
+#     ("VLLM_ALLOW_LONG_MAX_MODEL_LEN", "1"),
+# ]
 
 SECRET_ENVS = [
     "JACKSONP_HF_TOKEN:HF_TOKEN",
@@ -232,11 +238,22 @@ def build_command(
     cmd.extend(["-H", "default", "-n", exp_name])
 
     harness_overrides = list(BASE_HARNESS_OVERRIDES)
-    if model_type == "transformer":
+    if model_type == "hybrid":
+        harness_overrides = [
+            ("provider.num_instances", "{num_gpus}"),
+            ("provider.kind", "hf"),
+            ("provider.trust_remote_code", "true"),
+            ("provider.dtype", "bfloat16"),
+            (
+                "provider.dependencies",
+                "[transformers @ git+https://github.com/yashassamaga/transformers.git@hybrid-small-suite]",
+            ),
+            ("provider.tokenizer", OLMO_3_7B_BASE_ID),
+        ]
+    else:  # transformer
+        harness_overrides = list(BASE_HARNESS_OVERRIDES)
         harness_overrides.extend(CUSTOM_CONFIG_HARNESS_OVERRIDES)
         harness_overrides.extend(TRANSFORMER_60M_HARNESS_OVERRIDES)
-    else:
-        harness_overrides.extend(HYBRID_HARNESS_OVERRIDES)
 
     for key, value in harness_overrides:
         cmd.extend(["-o", f"{key}={value.replace('{num_gpus}', str(num_gpus))}"])
@@ -263,10 +280,10 @@ def build_command(
         ]
     )
 
-    if model_type == "hybrid":
-        cmd.extend(["--image", HYBRID_IMAGE])
-        for key, value in HYBRID_ENVS:
-            cmd.extend(["--env", f"{key}={value}"])
+    # if model_type == "hybrid":
+    #     cmd.extend(["--image", HYBRID_IMAGE])
+    #     for key, value in HYBRID_ENVS:
+    #         cmd.extend(["--env", f"{key}={value}"])
 
     for secret_env in SECRET_ENVS:
         cmd.extend(["--secret-env", secret_env])
