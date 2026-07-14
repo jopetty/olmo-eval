@@ -183,7 +183,7 @@ def build_command(
     cmd += ["--workspace", WORKSPACE]
     cmd += ["--budget", BUDGET]
     cmd += ["--inspect"]
-    cmd += ["--secret-env", "yashasbls_HF_TOKEN:HF_TOKEN"]
+    cmd += ["--secret-env", "jacksonp_HF_TOKEN:HF_TOKEN"]
     cmd += ["--env", "VLLM_ALLOW_LONG_MAX_MODEL_LEN=1"]
     cmd += ["--no-follow"]
     cmd += ["-y"]
