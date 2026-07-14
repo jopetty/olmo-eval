@@ -10,6 +10,7 @@ NUM_GPUS = 1
 # WORKSPACE = "ai2/linear-rnns"
 WORKSPACE = "ai2/beyond-state"
 BUDGET = "ai2/oe-other"
+IMAGE = "yashasbls/olmo-eval-vllm-g79d31a3f9-tch2100cu128-2026-05-23"
 
 CKPT_BASE = "/weka/oe-training-default/ai2-llm/checkpoints/yashasbls"
 
@@ -152,6 +153,7 @@ def build_command(
     cmd += ["--cluster", CLUSTER]
     cmd += ["--workspace", WORKSPACE]
     cmd += ["--budget", BUDGET]
+    cmd += ["--image", IMAGE]
     cmd += ["--inspect"]
     cmd += ["--secret-env", "jacksonp_HF_TOKEN:HF_TOKEN"]
     cmd += ["--secret-env", "jacksonp_GITHUB_TOKEN:GITHUB_TOKEN"]
