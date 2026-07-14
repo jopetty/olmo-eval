@@ -1,7 +1,5 @@
 import argparse
-import functools
 import json
-import os
 import subprocess
 import time
 
@@ -12,6 +10,7 @@ NUM_GPUS = 4
 # WORKSPACE = "ai2/linear-rnns"
 WORKSPACE = "ai2/beyond-state"
 BUDGET = "ai2/oe-other"
+IMAGE = "yashasbls/olmo-eval-vllm-g79d31a3f9-tch2100cu128-2026-05-23"
 
 CKPT_BASE = "/weka/oe-training-default/ai2-llm/checkpoints/yashasbls"
 
@@ -19,36 +18,8 @@ CKPT_BASE = "/weka/oe-training-default/ai2-llm/checkpoints/yashasbls"
 # (stock transformers/vLLM, no fork). The eval job pip-installs them from this
 # repo's GitHub remote at the branch/commit this launcher runs from, so they must
 # be committed and pushed.
-PLUGINS_REPO = "git+https://github.com/YashasSamaga/hybrid-small-suite.git"
-# Ref used for the plugin git installs when --use-latest is passed (or when the
-# launcher runs outside a checkout of this repo and can't resolve a git ref).
+PLUGINS_REPO = "git+https://github.com/jopetty/hybrid-small-suite.git"
 DEFAULT_PLUGINS_REF = "main"
-
-
-@functools.lru_cache(maxsize=1)
-def _current_git_ref() -> str:
-    """Git ref (branch or commit) the eval job installs the plugins from.
-
-    Resolves to the branch this launcher runs from so eval jobs use the plugins
-    at the same ref; falls back to the commit SHA on a detached HEAD. The ref
-    must be pushed to the remote, since the eval job pip-installs the plugins
-    from GitHub.
-    """
-    repo_dir = os.path.dirname(os.path.abspath(__file__))
-    branch = subprocess.run(
-        ["git", "-C", repo_dir, "rev-parse", "--abbrev-ref", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
-    if branch != "HEAD":
-        return branch
-    return subprocess.run(
-        ["git", "-C", repo_dir, "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
 
 
 def _plugin_dependencies_override(plugins_ref: str | None = None) -> str:
@@ -59,7 +30,7 @@ def _plugin_dependencies_override(plugins_ref: str | None = None) -> str:
     stock vLLM/transformers. olmo-eval v1.0.0 JSON-decodes the value, so it must
     be a JSON list of strings.
     """
-    ref = plugins_ref or _current_git_ref()
+    ref = plugins_ref or DEFAULT_PLUGINS_REF
     deps = [
         f"vllm-plugin @ {PLUGINS_REPO}@{ref}#subdirectory=plugins/vllm_plugin",
         f"transformers-plugin @ {PLUGINS_REPO}@{ref}#subdirectory=plugins/transformers_plugin",
@@ -182,8 +153,10 @@ def build_command(
     cmd += ["--cluster", CLUSTER]
     cmd += ["--workspace", WORKSPACE]
     cmd += ["--budget", BUDGET]
+    cmd += ["--image", IMAGE]
     cmd += ["--inspect"]
     cmd += ["--secret-env", "jacksonp_HF_TOKEN:HF_TOKEN"]
+    cmd += ["--secret-env", "jacksonp_GITHUB_TOKEN:GITHUB_TOKEN"]
     cmd += ["--env", "VLLM_ALLOW_LONG_MAX_MODEL_LEN=1"]
     cmd += ["--no-follow"]
     cmd += ["-y"]
@@ -222,17 +195,10 @@ def main():
         help="External baseline keys to evaluate using each model's native context length.",
     )
     parser.add_argument(
-        "--use-latest",
-        action="store_true",
-        help=f"Install the plugins from '{DEFAULT_PLUGINS_REF}' instead of resolving the "
-        "current git branch. Use this to run the launcher outside a checkout of this repo.",
-    )
-    parser.add_argument(
         "--plugins-ref",
         type=str,
         default=None,
-        help="Git ref (branch/tag/commit) to install the vllm/transformers plugins from. "
-        "Overrides --use-latest and the auto-resolved current branch.",
+        help=f"Git ref for the vLLM/transformers plugins (default: {DEFAULT_PLUGINS_REF}).",
     )
     parser.add_argument(
         "--delay", type=int, default=0, help="Seconds to wait between launching each eval job"
@@ -242,14 +208,7 @@ def main():
     num_gpus = args.gpus
     group = args.group
 
-    # Resolve the ref the eval job installs the plugins from: explicit --plugins-ref
-    # wins, then --use-latest, else the current branch (requires a git checkout).
-    if args.plugins_ref:
-        plugins_ref = args.plugins_ref
-    elif args.use_latest:
-        plugins_ref = DEFAULT_PLUGINS_REF
-    else:
-        plugins_ref = _current_git_ref()
+    plugins_ref = args.plugins_ref or DEFAULT_PLUGINS_REF
 
     launched = 0
 
