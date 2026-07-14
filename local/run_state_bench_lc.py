@@ -17,7 +17,7 @@ CKPT_BASE = "/weka/oe-training-default/ai2-llm/checkpoints/yashasbls"
 # (stock transformers/vLLM, no fork). The eval job pip-installs them from this
 # repo's GitHub remote at the branch/commit this launcher runs from, so they must
 # be committed and pushed.
-PLUGINS_REPO = "git+https://github.com/YashasSamaga/hybrid-small-suite.git"
+PLUGINS_REPO = "git+https://github.com/jopetty/hybrid-small-suite.git"
 DEFAULT_PLUGINS_REF = "main"
 
 
