@@ -254,6 +254,7 @@ def build_command(
     model_type: str,
     tasks: list[str],
     num_gpus: int = NUM_GPUS,
+    cluster: str = CLUSTER,
 ) -> list[str]:
     model_short = get_model_short_name(model_path)
     tasks_short = "-".join(task.replace(":", "_") for task in tasks)
@@ -296,7 +297,7 @@ def build_command(
             "--group",
             GROUP,
             "--cluster",
-            CLUSTER,
+            cluster,
             "--workspace",
             WORKSPACE,
             "--budget",
@@ -381,6 +382,12 @@ def parse_args() -> argparse.Namespace:
         default=NUM_GPUS,
         help="Number of GPUs per job.",
     )
+    parser.add_argument(
+        "--cluster",
+        type=str,
+        default=CLUSTER,
+        help="Beaker cluster on which to run the evaluation.",
+    )
     checkpoint_group = parser.add_mutually_exclusive_group()
     checkpoint_group.add_argument(
         "--checkpoints",
@@ -418,6 +425,7 @@ def main() -> None:
             args.model_type,
             TASKS,
             args.gpus,
+            args.cluster,
         )
         for checkpoint in checkpoints
     ]
