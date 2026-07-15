@@ -67,8 +67,9 @@ MODEL_ROOTS = {
     / "transformer-r-trivial_50supervision_n200000000_v26_a50_m64_z1p2_assignments_lt5-Cx2"
     / "60M",
     ("transformer", "r-trivial", 100): CHECKPOINT_BASE
-    # / "transformer-r-trivial_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt5-Cx2"
-    / "transformer-r-trivial_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt5-Cx2-init_seed7"
+    # / "transformer-r-trivial_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt5-Cx2-init_seed0"
+    # / "transformer-r-trivial_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt5-Cx2-init_seed7"
+    / "transformer-r-trivial_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt5-Cx2-init_seed42"
     / "60M",
 }
 
