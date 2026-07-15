@@ -7,6 +7,7 @@ CHECKPOINT_BASE=/weka/oe-training-default/ai2-llm/checkpoints/jacksonp
 
 weight_dirs=(
   "$CHECKPOINT_BASE/hybrid-aperiodic_0supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx2/60M"
+  "$CHECKPOINT_BASE/hybrid-aperiodic_50supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4-init_seed42/60M"
   "$CHECKPOINT_BASE/hybrid-aperiodic_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4/60M"
   "$CHECKPOINT_BASE/hybrid-periodic_0supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx2/60M"
   "$CHECKPOINT_BASE/hybrid-periodic_50supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4/60M"

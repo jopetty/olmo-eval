@@ -21,6 +21,9 @@ MODEL_ROOTS = {
     ("hybrid", "aperiodic", 0): CHECKPOINT_BASE
     / "hybrid-aperiodic_0supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx2"
     / "60M",
+    ("hybrid", "aperiodic", 50): CHECKPOINT_BASE
+    / "hybrid-aperiodic_50supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4-init_seed42"
+    / "60M",
     ("hybrid", "aperiodic", 100): CHECKPOINT_BASE
     / "hybrid-aperiodic_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4"
     / "60M",
@@ -75,6 +78,18 @@ MODEL_ROOTS = {
 
 CHECKPOINT_STEPS = {
     ("hybrid", "aperiodic", 0): [0, 2034, 2260, 4294, 4521, 8589, 9000, 9041],
+    ("hybrid", "aperiodic", 50): [
+        0,
+        2034,
+        2260,
+        4294,
+        4521,
+        8589,
+        9041,
+        17177,
+        18000,
+        18082,
+    ],
     ("hybrid", "aperiodic", 100): [
         0,
         2034,
