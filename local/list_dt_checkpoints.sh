@@ -17,8 +17,10 @@ weight_dirs=(
   "$CHECKPOINT_BASE/transformer-aperiodic_0supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx2/60M"
   "$CHECKPOINT_BASE/transformer-aperiodic_50supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4/60M"
   "$CHECKPOINT_BASE/transformer-aperiodic_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4/60M"
+  "$CHECKPOINT_BASE/transformer-periodic_0supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx2-init_seed42/60M"
   "$CHECKPOINT_BASE/transformer-periodic_50supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4/60M"
   "$CHECKPOINT_BASE/transformer-periodic_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt10-Cx4/60M"
+  "$CHECKPOINT_BASE/transformer-r-trivial_0supervision_n200000000_v26_a50_m64_z1p2_assignments_lt5-Cx2/60M"
   "$CHECKPOINT_BASE/transformer-r-trivial_50supervision_n200000000_v26_a50_m64_z1p2_assignments_lt5-Cx2/60M"
   "$CHECKPOINT_BASE/transformer-r-trivial_100supervision_n200000000_v26_a50_m64_z1p2_assignments_lt5-Cx2/60M"
 )
