@@ -4,13 +4,15 @@ import subprocess
 from pathlib import Path
 
 GROUP = "jacksonp-directly-trained-synthetic-evals"
-CLUSTER = "ai2/jupiter"
+CLUSTER = "ai2/saturn"
 PRIORITY = "urgent"
 NUM_GPUS = 2
 WORKSPACE = "ai2/beyond-state"
 BUDGET = "ai2/oe-other"
 
-CHECKPOINT_BASE = Path("/weka/oe-training-default/ai2-llm/model-ladders/synthetic-ladder/60M")
+CHECKPOINT_BASE = Path(
+    "/weka/oe-training-default/ai2-llm/model-ladders/synthetic-ladder/60M"
+)
 MODEL_TYPES = ("hybrid", "transformer")
 DATASET_TYPES = ("r-trivial", "aperiodic", "periodic")
 SEEDS = (0, 7, 42)
@@ -38,7 +40,10 @@ MODEL_ROOTS = {
 }
 
 CHECKPOINTS = {
-    model: {step: model_root / f"step{step}-hf" for step in CHECKPOINT_STEPS[model[0]]}
+    model: {
+        step: model_root / f"step{step}-hf"
+        for step in CHECKPOINT_STEPS[model[0]]
+    }
     for model, model_root in MODEL_ROOTS.items()
 }
 
