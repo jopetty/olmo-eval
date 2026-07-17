@@ -3,7 +3,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
-GROUP = "jacksonp-directly-trained-synthetic-evals"
+GROUP = "jacksonp-directly-trained-synthetic-evals-2"
 CLUSTER = "ai2/saturn"
 PRIORITY = "urgent"
 NUM_GPUS = 2
