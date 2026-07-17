@@ -15,15 +15,19 @@ STATE_BENCH_LC_REPO = "jacksonp-ai2/state-bench-lc"
 STATE_BENCH_LC_CONFIGS = (
     "cube-painting--aperiodic",
     "cube-painting--periodic",
+    "cube-painting--r-trivial",
     "integer-code--aperiodic",
     "integer-code--periodic",
     "integer-code--r-trivial",
     "people-in-rooms--aperiodic",
     "people-in-rooms--periodic",
+    "people-in-rooms--r-trivial",
     "spreadsheet-cells--aperiodic",
     "spreadsheet-cells--periodic",
+    "spreadsheet-cells--r-trivial",
     "status-lights--aperiodic",
     "status-lights--periodic",
+    "status-lights--r-trivial",
 )
 
 
