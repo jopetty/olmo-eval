@@ -4,13 +4,14 @@ import subprocess
 import time
 
 GROUP = "jacksonp-state-bench-lc-3"
-CLUSTER = "ai2/saturn"
-PRIORITY = "urgent"
+CLUSTER = "ai2/holmes"
+PRIORITY = "high"
 NUM_GPUS = 4
 # WORKSPACE = "ai2/linear-rnns"
 WORKSPACE = "ai2/beyond-state"
 BUDGET = "ai2/oe-other"
 IMAGE = "yashasbls/olmo-eval-vllm-g79d31a3f9-tch2100cu128-2026-05-23"
+MAX_CONTEXT_LEN = 5_000_000
 
 CKPT_BASE = "/weka/oe-training-default/ai2-llm/checkpoints/yashasbls"
 
@@ -124,7 +125,7 @@ def build_command(
     model_path: str,
     num_gpus: int = NUM_GPUS,
     group: str = GROUP,
-    max_model_len: int = 131072,
+    max_model_len: int = MAX_CONTEXT_LEN,
     plugins_ref: str | None = None,
 ) -> list[str]:
     exp_name = experiment_name(model_path)
