@@ -219,6 +219,12 @@ def main():
         default=DEFAULT_CLUSTER,
         help="Cluster to submit jobs to (default: ai2/saturn).",
     )
+    parser.add_argument(
+        "--max-model-len",
+        type=int,
+        default=MAX_CONTEXT_LEN,
+        help="Maximum model context length (default: 131072).",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     num_gpus = args.gpus
@@ -228,7 +234,7 @@ def main():
 
     launched = 0
 
-    def launch_model(model_path, *, label, max_model_len=MAX_CONTEXT_LEN):
+    def launch_model(model_path, *, label, max_model_len=args.max_model_len):
         """Launch one StateBench job for ``model_path``."""
         nonlocal launched
         cmd = build_command(
