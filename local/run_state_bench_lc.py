@@ -4,14 +4,20 @@ import subprocess
 import time
 
 GROUP = "jacksonp-state-bench-lc-3"
-CLUSTER = "ai2/holmes"
-PRIORITY = "high"
+DEFAULT_CLUSTER = "ai2/saturn"
 NUM_GPUS = 4
 # WORKSPACE = "ai2/linear-rnns"
 WORKSPACE = "ai2/beyond-state"
 BUDGET = "ai2/oe-other"
 IMAGE = "yashasbls/olmo-eval-vllm-g79d31a3f9-tch2100cu128-2026-05-23"
 MAX_CONTEXT_LEN = 5_000_000
+
+PRIORITIES = {
+    "ai2/saturn": "urgent",
+    "ai2/jupiter": "urgent",
+    "ai2/holmes": "high",
+}
+# PRIORITY = PRIORITIES.get(CLUSTER, "high")
 
 CKPT_BASE = "/weka/oe-training-default/ai2-llm/checkpoints/yashasbls"
 
@@ -127,8 +133,11 @@ def build_command(
     group: str = GROUP,
     max_model_len: int = MAX_CONTEXT_LEN,
     plugins_ref: str | None = None,
+    cluster: str = DEFAULT_CLUSTER,
 ) -> list[str]:
     exp_name = experiment_name(model_path)
+
+    priority = PRIORITIES.get(cluster, "high")
 
     cmd = ["uv", "run", "olmo-eval", "beaker", "launch"]
     cmd += ["-H", "default"]
@@ -149,9 +158,9 @@ def build_command(
     cmd += ["-t", TASK]
     cmd += ["--gpus", str(num_gpus)]
     cmd += ["--retries", "3"]
-    cmd += ["--priority", PRIORITY]
+    cmd += ["--priority", priority]
     cmd += ["--group", group]
-    cmd += ["--cluster", CLUSTER]
+    cmd += ["--cluster", cluster]
     cmd += ["--workspace", WORKSPACE]
     cmd += ["--budget", BUDGET]
     cmd += ["--image", IMAGE]
@@ -204,6 +213,12 @@ def main():
     parser.add_argument(
         "--delay", type=int, default=0, help="Seconds to wait between launching each eval job"
     )
+    parser.add_argument(
+        "--cluster",
+        type=str,
+        default=DEFAULT_CLUSTER,
+        help="Cluster to submit jobs to (default: ai2/saturn).",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     num_gpus = args.gpus
@@ -222,6 +237,7 @@ def main():
             group=group,
             max_model_len=max_model_len,
             plugins_ref=plugins_ref,
+            cluster=args.cluster,
         )
         print(f"\n=== {label} | state_bench_lc | {num_gpus} GPUs | mml={max_model_len} ===")
         print(" ".join(cmd))
