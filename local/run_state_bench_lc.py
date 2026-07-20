@@ -3,7 +3,7 @@ import json
 import subprocess
 import time
 
-GROUP = "jacksonp-state-bench-lc-3"
+GROUP = "jacksonp-state-bench-lc-4"
 DEFAULT_CLUSTER = "ai2/saturn"
 NUM_GPUS = 4
 # WORKSPACE = "ai2/linear-rnns"
@@ -228,7 +228,7 @@ def main():
 
     launched = 0
 
-    def launch_model(model_path, *, label, max_model_len=131072):
+    def launch_model(model_path, *, label, max_model_len=MAX_CONTEXT_LEN):
         """Launch one StateBench job for ``model_path``."""
         nonlocal launched
         cmd = build_command(
