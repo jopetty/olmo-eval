@@ -117,14 +117,19 @@ BASELINES: dict[str, dict[str, str | int]] = {
     "lfm2.5-350m": {"hf": "LiquidAI/LFM2.5-350M-Base", "ctx": 32768, "status": "untested"},
 }
 
-TASK = "state_bench_lc"
+TOKEN_STRATA = (
+    "tokens_0_100k",
+    "tokens_100k_500k",
+    "tokens_500k_1m",
+    "tokens_1m_plus",
+)
 
 
-def experiment_name(model_path: str) -> str:
+def experiment_name(model_path: str, task: str) -> str:
     """Build a deterministic Beaker experiment name for a model."""
     parts = model_path.rstrip("/").split("/")
     model_short = "_".join(parts[-2:]).lower()
-    return f"{model_short}-{TASK}"
+    return f"{model_short}-{task.replace(':', '-')}"
 
 
 def build_command(
@@ -134,8 +139,9 @@ def build_command(
     max_model_len: int = MAX_CONTEXT_LEN,
     plugins_ref: str | None = None,
     cluster: str = DEFAULT_CLUSTER,
+    task: str = "state_bench",
 ) -> list[str]:
-    exp_name = experiment_name(model_path)
+    exp_name = experiment_name(model_path, task)
 
     priority = PRIORITIES.get(cluster, "high")
 
@@ -155,7 +161,7 @@ def build_command(
     cmd += ["-o", "provider.kwargs.attention_backend=FLASH_ATTN"]
     cmd += ["-o", f"provider.max_model_len={max_model_len}"]
     cmd += ["-m", model_path]
-    cmd += ["-t", TASK]
+    cmd += ["-t", task]
     cmd += ["--gpus", str(num_gpus)]
     cmd += ["--retries", "3"]
     cmd += ["--priority", priority]
@@ -223,7 +229,14 @@ def main():
         "--max-model-len",
         type=int,
         default=MAX_CONTEXT_LEN,
-        help="Maximum model context length (default: 131072).",
+        help=f"Maximum model context length (default: {MAX_CONTEXT_LEN}).",
+    )
+    parser.add_argument(
+        "--strata",
+        nargs="+",
+        choices=TOKEN_STRATA,
+        default=list(TOKEN_STRATA),
+        help="Context-length strata to launch as independent jobs.",
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -235,23 +248,26 @@ def main():
     launched = 0
 
     def launch_model(model_path, *, label, max_model_len=args.max_model_len):
-        """Launch one StateBench job for ``model_path``."""
+        """Launch one StateBench job per selected context-length stratum."""
         nonlocal launched
-        cmd = build_command(
-            model_path,
-            num_gpus,
-            group=group,
-            max_model_len=max_model_len,
-            plugins_ref=plugins_ref,
-            cluster=args.cluster,
-        )
-        print(f"\n=== {label} | state_bench_lc | {num_gpus} GPUs | mml={max_model_len} ===")
-        print(" ".join(cmd))
-        if not args.dry_run:
-            if launched > 0 and args.delay > 0:
-                time.sleep(args.delay)
-            subprocess.run(cmd, check=True)
-        launched += 1
+        for token_stratum in args.strata:
+            task = f"state_bench:{token_stratum}"
+            cmd = build_command(
+                model_path,
+                num_gpus,
+                group=group,
+                max_model_len=max_model_len,
+                plugins_ref=plugins_ref,
+                cluster=args.cluster,
+                task=task,
+            )
+            print(f"\n=== {label} | {task} | {num_gpus} GPUs | mml={max_model_len} ===")
+            print(" ".join(cmd))
+            if not args.dry_run:
+                if launched > 0 and args.delay > 0:
+                    time.sleep(args.delay)
+                subprocess.run(cmd, check=True)
+            launched += 1
 
     if args.model:
         launch_model(args.model, label="custom")
