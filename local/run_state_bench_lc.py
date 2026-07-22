@@ -246,40 +246,42 @@ def main():
 
     launched = 0
 
-    def launch_model(model_path, *, label, max_model_len=args.max_model_len):
-        """Launch one StateBench job per selected context-length stratum."""
+    def launch_task(
+        model_path,
+        *,
+        label,
+        token_stratum,
+        max_model_len=args.max_model_len,
+    ):
+        """Launch one StateBench context-length stratum for a model."""
         nonlocal launched
-        for token_stratum in args.strata:
-            task = f"state_bench:{token_stratum}"
-            cmd = build_command(
-                model_path,
-                num_gpus,
-                group=group,
-                max_model_len=max_model_len,
-                plugins_ref=plugins_ref,
-                cluster=args.cluster,
-                task=task,
-            )
-            print(f"\n=== {label} | {task} | {num_gpus} GPUs | mml={max_model_len} ===")
-            print(" ".join(cmd))
-            if not args.dry_run:
-                if launched > 0 and args.delay > 0:
-                    time.sleep(args.delay)
-                subprocess.run(cmd, check=True)
-            launched += 1
+        task = f"state_bench:{token_stratum}"
+        cmd = build_command(
+            model_path,
+            num_gpus,
+            group=group,
+            max_model_len=max_model_len,
+            plugins_ref=plugins_ref,
+            cluster=args.cluster,
+            task=task,
+        )
+        print(f"\n=== {label} | {task} | {num_gpus} GPUs | mml={max_model_len} ===")
+        print(" ".join(cmd))
+        if not args.dry_run:
+            if launched > 0 and args.delay > 0:
+                time.sleep(args.delay)
+            subprocess.run(cmd, check=True)
+        launched += 1
 
+    targets = []
     if args.model:
-        launch_model(args.model, label="custom")
+        targets.append((args.model, "custom", args.max_model_len))
     elif args.baselines:
         for key in args.baselines:
             spec = BASELINES[key]
             hf = spec["hf"]
             ctx_tokens = spec["ctx"]
-            launch_model(
-                hf,
-                label=f"baseline {key} ({hf})",
-                max_model_len=ctx_tokens,
-            )
+            targets.append((hf, f"baseline {key} ({hf})", ctx_tokens))
     else:
         for stage in args.stages:
             checkpoints = all_stages[stage]
@@ -289,10 +291,16 @@ def main():
                     continue
                 for model_path in checkpoints[size]:
                     short_name = model_path.rstrip("/").split("/")[-1]
-                    launch_model(
-                        model_path,
-                        label=f"{stage}/{size}/{short_name}",
-                    )
+                    targets.append((model_path, f"{stage}/{size}/{short_name}", args.max_model_len))
+
+    for token_stratum in args.strata:
+        for model_path, label, max_model_len in targets:
+            launch_task(
+                model_path,
+                label=label,
+                token_stratum=token_stratum,
+                max_model_len=max_model_len,
+            )
 
     print(f"\nLaunched {launched} job(s).")
 
