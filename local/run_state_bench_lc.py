@@ -6,7 +6,6 @@ import time
 GROUP = "jacksonp-state-bench-lc-4"
 DEFAULT_CLUSTER = "ai2/saturn"
 NUM_GPUS = 4
-# WORKSPACE = "ai2/linear-rnns"
 WORKSPACE = "ai2/beyond-state"
 BUDGET = "ai2/oe-other"
 IMAGE = "yashasbls/olmo-eval-vllm-g79d31a3f9-tch2100cu128-2026-05-23"
