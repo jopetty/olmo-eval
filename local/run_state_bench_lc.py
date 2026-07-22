@@ -9,7 +9,6 @@ NUM_GPUS = 4
 WORKSPACE = "ai2/beyond-state"
 BUDGET = "ai2/oe-other"
 IMAGE = "yashasbls/olmo-eval-vllm-g79d31a3f9-tch2100cu128-2026-05-23"
-MAX_CONTEXT_LEN = 5_000_000
 
 PRIORITIES = {
     "ai2/saturn": "urgent",
@@ -116,12 +115,12 @@ BASELINES: dict[str, dict[str, str | int]] = {
     "lfm2.5-350m": {"hf": "LiquidAI/LFM2.5-350M-Base", "ctx": 32768, "status": "untested"},
 }
 
-TOKEN_STRATA = (
-    "tokens_0_100k",
-    "tokens_100k_500k",
-    "tokens_500k_1m",
-    "tokens_1m_plus",
-)
+TOKEN_STRATA_MAX_MODEL_LEN = {
+    "tokens_0_100k": 100_000,
+    "tokens_100k_500k": 500_000,
+    "tokens_500k_1m": 1_000_000,
+    "tokens_1m_plus": 5_000_000,
+}
 
 
 def experiment_name(model_path: str, task: str) -> str:
@@ -135,7 +134,7 @@ def build_command(
     model_path: str,
     num_gpus: int = NUM_GPUS,
     group: str = GROUP,
-    max_model_len: int = MAX_CONTEXT_LEN,
+    max_model_len: int = 5_000_000,
     plugins_ref: str | None = None,
     cluster: str = DEFAULT_CLUSTER,
     task: str = "state_bench",
@@ -225,16 +224,10 @@ def main():
         help="Cluster to submit jobs to (default: ai2/saturn).",
     )
     parser.add_argument(
-        "--max-model-len",
-        type=int,
-        default=MAX_CONTEXT_LEN,
-        help=f"Maximum model context length (default: {MAX_CONTEXT_LEN}).",
-    )
-    parser.add_argument(
         "--strata",
         nargs="+",
-        choices=TOKEN_STRATA,
-        default=list(TOKEN_STRATA),
+        choices=TOKEN_STRATA_MAX_MODEL_LEN,
+        default=list(TOKEN_STRATA_MAX_MODEL_LEN),
         help="Context-length strata to launch as independent jobs.",
     )
     parser.add_argument("--dry-run", action="store_true")
@@ -251,11 +244,11 @@ def main():
         *,
         label,
         token_stratum,
-        max_model_len=args.max_model_len,
     ):
         """Launch one StateBench context-length stratum for a model."""
         nonlocal launched
         task = f"state_bench:{token_stratum}"
+        max_model_len = TOKEN_STRATA_MAX_MODEL_LEN[token_stratum]
         cmd = build_command(
             model_path,
             num_gpus,
@@ -275,13 +268,12 @@ def main():
 
     targets = []
     if args.model:
-        targets.append((args.model, "custom", args.max_model_len))
+        targets.append((args.model, "custom"))
     elif args.baselines:
         for key in args.baselines:
             spec = BASELINES[key]
             hf = spec["hf"]
-            ctx_tokens = spec["ctx"]
-            targets.append((hf, f"baseline {key} ({hf})", ctx_tokens))
+            targets.append((hf, f"baseline {key} ({hf})"))
     else:
         for stage in args.stages:
             checkpoints = all_stages[stage]
@@ -291,15 +283,14 @@ def main():
                     continue
                 for model_path in checkpoints[size]:
                     short_name = model_path.rstrip("/").split("/")[-1]
-                    targets.append((model_path, f"{stage}/{size}/{short_name}", args.max_model_len))
+                    targets.append((model_path, f"{stage}/{size}/{short_name}"))
 
     for token_stratum in args.strata:
-        for model_path, label, max_model_len in targets:
+        for model_path, label in targets:
             launch_task(
                 model_path,
                 label=label,
                 token_stratum=token_stratum,
-                max_model_len=max_model_len,
             )
 
     print(f"\nLaunched {launched} job(s).")
