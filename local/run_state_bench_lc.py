@@ -3,7 +3,7 @@ import json
 import subprocess
 import time
 
-GROUP = "jacksonp-state-bench-lc-6"
+GROUP = "jacksonp-state-bench-lc-7"
 DEFAULT_CLUSTER = "ai2/saturn"
 NUM_GPUS = 4
 WORKSPACE = "ai2/beyond-state"
