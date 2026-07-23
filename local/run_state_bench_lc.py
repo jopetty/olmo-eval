@@ -3,7 +3,7 @@ import json
 import subprocess
 import time
 
-GROUP = "jacksonp-state-bench-lc-5"
+GROUP = "jacksonp-state-bench-lc-6"
 DEFAULT_CLUSTER = "ai2/saturn"
 NUM_GPUS = 4
 WORKSPACE = "ai2/beyond-state"
@@ -119,7 +119,6 @@ TOKEN_STRATA_MAX_MODEL_LEN = {
     "tokens_0_100k": 100_000,
     "tokens_100k_500k": 500_000,
     "tokens_500k_1m": 1_000_000,
-    "tokens_1m_plus": 5_000_000,
 }
 
 

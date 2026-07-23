@@ -22,6 +22,9 @@ STATE_BENCH_CONFIGS = (
     "people-in-rooms--aperiodic",
     "people-in-rooms--periodic",
     "people-in-rooms--r-trivial",
+    "ruler--aperiodic",
+    "ruler--periodic",
+    "ruler--r-trivial",
     "spreadsheet-cells--aperiodic",
     "spreadsheet-cells--periodic",
     "spreadsheet-cells--r-trivial",
@@ -34,26 +37,10 @@ STATE_BENCH_TOKEN_STRATA = (
     "tokens_0_100k",
     "tokens_100k_500k",
     "tokens_500k_1m",
-    "tokens_1m_plus",
-)
-
-_STATE_BENCH_1M_PLUS_CONFIGS = frozenset(
-    {
-        "cube-painting--aperiodic",
-        "cube-painting--periodic",
-        "people-in-rooms--periodic",
-        "spreadsheet-cells--aperiodic",
-        "spreadsheet-cells--periodic",
-        "status-lights--aperiodic",
-        "status-lights--periodic",
-    }
 )
 
 STATE_BENCH_STRATA_BY_CONFIG = {
-    config_name: STATE_BENCH_TOKEN_STRATA
-    if config_name in _STATE_BENCH_1M_PLUS_CONFIGS
-    else STATE_BENCH_TOKEN_STRATA[:-1]
-    for config_name in STATE_BENCH_CONFIGS
+    config_name: STATE_BENCH_TOKEN_STRATA for config_name in STATE_BENCH_CONFIGS
 }
 
 

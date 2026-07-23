@@ -31,6 +31,7 @@ for _formatter in (
     "cube-painting",
     "integer-code",
     "people-in-rooms",
+    "ruler",
     "spreadsheet-cells",
     "status-lights",
 ):
