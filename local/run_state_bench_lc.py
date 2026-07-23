@@ -115,10 +115,10 @@ BASELINES: dict[str, dict[str, str | int]] = {
     "lfm2.5-350m": {"hf": "LiquidAI/LFM2.5-350M-Base", "ctx": 32768, "status": "untested"},
 }
 
-TOKEN_STRATA_MAX_MODEL_LEN = {
-    "tokens_0_100k": 100_000,
-    "tokens_100k_500k": 500_000,
-    "tokens_500k_1m": 1_000_000,
+TOKEN_STRATA = {
+    "short": ("tokens_0_100k", 100_000),
+    "medium": ("tokens_100k_500k", 500_000),
+    "long": ("tokens_500k_1m", 1_000_000),
 }
 
 
@@ -225,9 +225,9 @@ def main():
     parser.add_argument(
         "--strata",
         nargs="+",
-        choices=TOKEN_STRATA_MAX_MODEL_LEN,
-        default=list(TOKEN_STRATA_MAX_MODEL_LEN),
-        help="Context-length strata to launch as independent jobs.",
+        choices=TOKEN_STRATA,
+        default=list(TOKEN_STRATA),
+        help="Context-length strata to launch as independent jobs (default: all).",
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
@@ -242,12 +242,12 @@ def main():
         model_path,
         *,
         label,
-        token_stratum,
+        stratum,
     ):
         """Launch one StateBench context-length stratum for a model."""
         nonlocal launched
+        token_stratum, max_model_len = TOKEN_STRATA[stratum]
         task = f"state_bench:{token_stratum}"
-        max_model_len = TOKEN_STRATA_MAX_MODEL_LEN[token_stratum]
         cmd = build_command(
             model_path,
             num_gpus,
@@ -284,12 +284,12 @@ def main():
                     short_name = model_path.rstrip("/").split("/")[-1]
                     targets.append((model_path, f"{stage}/{size}/{short_name}"))
 
-    for token_stratum in args.strata:
+    for stratum in args.strata:
         for model_path, label in targets:
             launch_task(
                 model_path,
                 label=label,
-                token_stratum=token_stratum,
+                stratum=stratum,
             )
 
     print(f"\nLaunched {launched} job(s).")
