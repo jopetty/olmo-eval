@@ -140,6 +140,7 @@ def build_command(
     plugins_ref: str | None = None,
     cluster: str = DEFAULT_CLUSTER,
     task: str = "state_bench",
+    workspace: str = WORKSPACE,
 ) -> list[str]:
     exp_name = experiment_name(model_path, task)
 
@@ -169,7 +170,7 @@ def build_command(
     cmd += ["--priority", priority]
     cmd += ["--group", group]
     cmd += ["--cluster", cluster]
-    cmd += ["--workspace", WORKSPACE]
+    cmd += ["--workspace", workspace]
     cmd += ["--budget", BUDGET]
     cmd += ["--image", IMAGE]
     cmd += ["--inspect"]
@@ -228,6 +229,12 @@ def main():
         help="Cluster to submit jobs to (default: ai2/saturn).",
     )
     parser.add_argument(
+        "--workspace",
+        type=str,
+        default=WORKSPACE,
+        help=f"Beaker workspace for launched jobs (default: {WORKSPACE}).",
+    )
+    parser.add_argument(
         "--strata",
         nargs="+",
         choices=TOKEN_STRATA,
@@ -261,6 +268,7 @@ def main():
             plugins_ref=plugins_ref,
             cluster=args.cluster,
             task=task,
+            workspace=args.workspace,
         )
         print(f"\n=== {label} | {task} | {num_gpus} GPUs | mml={max_model_len} ===")
         print(" ".join(cmd))
