@@ -113,6 +113,9 @@ BASELINES: dict[str, dict[str, str | int]] = {
     # LFM2.5 hybrid (short-conv + GQA) base checkpoints (32k ctx, Jun 2026) — on-device baseline
     "lfm2.5-230m": {"hf": "LiquidAI/LFM2.5-230M-Base", "ctx": 32768, "status": "untested"},
     "lfm2.5-350m": {"hf": "LiquidAI/LFM2.5-350M-Base", "ctx": 32768, "status": "untested"},
+    # OLMo 3 7b
+    "olmo-3-7b": {"hf": "allenai/Olmo-3-1025-7B", "ctx": 65536, "status": "ok"},
+    "olmo-3-hybrid-7b": {"hf": "allenai/Olmo-Hybrid-7B", "ctx": 65536, "status": "ok"},
 }
 
 TOKEN_STRATA = {
