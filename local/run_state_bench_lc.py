@@ -160,6 +160,8 @@ def build_command(
     cmd += ["-o", _plugin_dependencies_override(plugins_ref)]
     cmd += ["-o", "provider.kwargs.attention_backend=FLASH_ATTN"]
     cmd += ["-o", f"provider.max_model_len={max_model_len}"]
+    if model_path.rstrip("/") == "allenai/Olmo-3-1025-7B":
+        cmd += ["-o", "provider.kwargs.model_impl=transformers"]
     cmd += ["-m", model_path]
     cmd += ["-t", task]
     cmd += ["--gpus", str(num_gpus)]
@@ -176,8 +178,6 @@ def build_command(
     cmd += ["--env", "VLLM_ALLOW_LONG_MAX_MODEL_LEN=1"]
     cmd += ["--no-follow"]
     cmd += ["-y"]
-    if model_path.rstrip("/") == "allenai/Olmo-3-1025-7B":
-        cmd += ["-o", "provider.kwargs.model_impl=transformers"]
     return cmd
 
 
