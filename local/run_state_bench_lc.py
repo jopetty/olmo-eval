@@ -8,7 +8,8 @@ DEFAULT_CLUSTER = "ai2/saturn"
 NUM_GPUS = 4
 WORKSPACE = "ai2/beyond-state"
 BUDGET = "ai2/oe-other"
-IMAGE = "yashasbls/olmo-eval-vllm-g79d31a3f9-tch2100cu128-2026-05-23"
+# IMAGE = "yashasbls/olmo-eval-vllm-g79d31a3f9-tch2100cu128-2026-05-23"
+IMAGE = "ai2-tylerm/olmo-eval-cu1281-trc2100-amd64"
 
 PRIORITIES = {
     "ai2/saturn": "urgent",
