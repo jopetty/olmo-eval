@@ -176,6 +176,8 @@ def build_command(
     cmd += ["--env", "VLLM_ALLOW_LONG_MAX_MODEL_LEN=1"]
     cmd += ["--no-follow"]
     cmd += ["-y"]
+    if model_path.rstrip("/") == "allenai/Olmo-3-1025-7B":
+        cmd += ["-o", "provider.kwargs.model_impl=transformers"]
     return cmd
 
 
