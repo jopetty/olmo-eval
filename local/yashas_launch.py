@@ -5,7 +5,7 @@ import os
 import subprocess
 import time
 
-GROUP = "yashasbls-hybrid-small-evals-v4"
+GROUP = "jacksonp-debug"
 CLUSTER = "ai2/jupiter"
 PRIORITY = "urgent"
 NUM_GPUS = 1
