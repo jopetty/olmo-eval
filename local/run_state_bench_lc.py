@@ -163,6 +163,7 @@ def build_command(
     cmd += ["-o", _plugin_dependencies_override(plugins_ref)]
     cmd += ["-o", "provider.kwargs.attention_backend=FLASH_ATTN"]
     cmd += ["-o", f"provider.max_model_len={max_model_len}"]
+    cmd += ["-o", "provider.kwargs.max_num_batched_tokens=4096"]
     if model_path.rstrip("/") == "allenai/Olmo-3-1025-7B":
         cmd += ["-o", "provider.kwargs.model_impl=transformers"]
     cmd += ["-m", model_path]
