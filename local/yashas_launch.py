@@ -18,7 +18,7 @@ CKPT_BASE = "/weka/oe-training-default/ai2-llm/checkpoints/yashasbls"
 # (stock transformers/vLLM, no fork). The eval job pip-installs them from this
 # repo's GitHub remote at the branch/commit this launcher runs from, so they must
 # be committed and pushed.
-PLUGINS_REPO = "git+https://github.com/YashasSamaga/hybrid-small-suite.git"
+PLUGINS_REPO = "git+https://github.com/jopetty/hybrid-small-suite.git"
 # Ref used for the plugin git installs when --use-latest is passed (or when the
 # launcher runs outside a checkout of this repo and can't resolve a git ref).
 DEFAULT_PLUGINS_REF = "main"
@@ -327,11 +327,11 @@ def build_command(
     cmd += ["--workspace", WORKSPACE]
     cmd += ["--budget", BUDGET]
     cmd += ["--inspect"]
-    cmd += ["--secret-env", "yashasbls_HF_TOKEN:HF_TOKEN"]
+    cmd += ["--secret-env", "jacksonp_HF_TOKEN:HF_TOKEN"]
     # Auth for cloning the private plugins repo during the provider.dependencies
     # install. Gantry's built-in git-credential setup reads the user-scoped
     # secret ``yashasbls_GITHUB_TOKEN``; map it to GITHUB_TOKEN here too.
-    cmd += ["--secret-env", "yashasbls_GITHUB_TOKEN:GITHUB_TOKEN"]
+    cmd += ["--secret-env", "jacksonp_GITHUB_TOKEN:GITHUB_TOKEN"]
     cmd += ["--env", "VLLM_ALLOW_LONG_MAX_MODEL_LEN=1"]
     cmd += ["--no-follow"]
     cmd += ["-y"]
