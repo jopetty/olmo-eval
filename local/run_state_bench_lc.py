@@ -73,6 +73,7 @@ all_stages: dict[str, dict[str, list[str]]] = {
         # "450m": [f"{CKPT_BASE}/hybrid-small-lc-v2-450m/stepXXXXX-hf/"],
         "810m": [f"{CKPT_BASE}/hybrid-small-long-context-v2-810m/step23842-hf/"],
         "1.4b": [f"{CKPT_BASE}/hybrid-small-long-context-v2-1.4b/step23842-hf/"],
+        "2.7b": [f"{CKPT_BASE}/hybrid-small-lc-2.7B/step23842-hf/"],
     },
 }
 
