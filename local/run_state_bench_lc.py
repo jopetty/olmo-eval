@@ -189,7 +189,7 @@ def main():
     parser.add_argument(
         "--sizes",
         nargs="+",
-        choices=["275m", "275m-transformer", "275m-gdn", "450m", "810m", "1.4b"],
+        choices=["275m", "275m-transformer", "275m-gdn", "450m", "810m", "1.4b", "2.7b"],
         default=["275m"],
     )
     parser.add_argument(
