@@ -74,6 +74,8 @@ all_stages: dict[str, dict[str, list[str]]] = {
         "810m": [f"{CKPT_BASE}/hybrid-small-long-context-v2-810m/step23842-hf/"],
         "1.4b": [f"{CKPT_BASE}/hybrid-small-long-context-v2-1.4b/step23842-hf/"],
         "2.7b": [f"{CKPT_BASE}/hybrid-small-lc-2.7B/step23842-hf/"],
+        "2.7b-lr5em5": [f"{CKPT_BASE}/hybrid-small-lc-2.7B-lr5em5/step23842-hf/"],
+        "2.7b-warmup5k": [f"{CKPT_BASE}/hybrid-small-lc-2.7B-warmup5k/step23842-hf/"],
     },
 }
 
@@ -190,7 +192,7 @@ def main():
     parser.add_argument(
         "--sizes",
         nargs="+",
-        choices=["275m", "275m-transformer", "275m-gdn", "450m", "810m", "1.4b", "2.7b"],
+        choices=["275m", "275m-transformer", "275m-gdn", "450m", "810m", "1.4b", "2.7b", "2.7b-lr5em5", "2.7b-warmup5k"],
         default=["275m"],
     )
     parser.add_argument(
