@@ -226,6 +226,11 @@ def parse_args() -> argparse.Namespace:
         default=["short"],
         help="StateBench context-length strata to evaluate. Defaults to short.",
     )
+    parser.add_argument(
+        "--subsample",
+        action="store_true",
+        help="Use the deterministic 10%% StateBench task suites.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
@@ -236,7 +241,8 @@ def main() -> None:
         for dataset_type in args.dataset_type:
             for stratum in args.strata:
                 token_stratum, max_model_len = TOKEN_STRATA[stratum]
-                task = f"state_bench:integer_code:{token_stratum}"
+                suite_name = "state_bench_10pct" if args.subsample else "state_bench"
+                task = f"{suite_name}:integer_code:{token_stratum}"
                 for seed in args.seed:
                     checkpoints = resolve_checkpoints(
                         model_type, dataset_type, seed, args.checkpoints, args.final
