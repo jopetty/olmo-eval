@@ -180,8 +180,20 @@ def resolve_checkpoints(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model-type", choices=MODEL_TYPES, default="transformer")
-    parser.add_argument("--dataset-type", choices=DATASET_TYPES, default="aperiodic")
+    parser.add_argument(
+        "--model-type",
+        nargs="+",
+        choices=MODEL_TYPES,
+        default=MODEL_TYPES,
+        help="Model architecture(s) to evaluate. Defaults to all architectures.",
+    )
+    parser.add_argument(
+        "--dataset-type",
+        nargs="+",
+        choices=DATASET_TYPES,
+        default=DATASET_TYPES,
+        help="Training dataset variant(s) to evaluate. Defaults to all variants.",
+    )
     parser.add_argument(
         "--seed",
         nargs="+",
@@ -215,27 +227,29 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    for stratum in args.strata:
-        token_stratum, max_model_len = TOKEN_STRATA[stratum]
-        task = f"state_bench:{token_stratum}"
-        for seed in args.seed:
-            checkpoints = resolve_checkpoints(
-                args.model_type, args.dataset_type, seed, args.checkpoints, args.final
-            )
-            for checkpoint in checkpoints:
-                model_path = str(CHECKPOINTS[(args.model_type, args.dataset_type, seed)][checkpoint])
-                command = build_command(
-                    model_path,
-                    args.model_type,
-                    task,
-                    max_model_len,
-                    args.gpus,
-                    args.cluster,
-                )
-                if args.dry_run:
-                    print(shlex.join(command))
-                else:
-                    subprocess.run(command, check=True)
+    for model_type in args.model_type:
+        for dataset_type in args.dataset_type:
+            for stratum in args.strata:
+                token_stratum, max_model_len = TOKEN_STRATA[stratum]
+                task = f"state_bench:{token_stratum}"
+                for seed in args.seed:
+                    checkpoints = resolve_checkpoints(
+                        model_type, dataset_type, seed, args.checkpoints, args.final
+                    )
+                    for checkpoint in checkpoints:
+                        model_path = str(CHECKPOINTS[(model_type, dataset_type, seed)][checkpoint])
+                        command = build_command(
+                            model_path,
+                            model_type,
+                            task,
+                            max_model_len,
+                            args.gpus,
+                            args.cluster,
+                        )
+                        if args.dry_run:
+                            print(shlex.join(command))
+                        else:
+                            subprocess.run(command, check=True)
 
 
 if __name__ == "__main__":
