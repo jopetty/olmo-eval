@@ -77,6 +77,34 @@ for _formatter in (
         aggregation=AggregationStrategy.AVERAGE,
         description=f"Deterministic 10% StateBench sample using the {_formatter} format.",
     )
+    for _token_stratum in STATE_BENCH_TOKEN_STRATA:
+        make_suite(
+            name=(f"state_bench:{_formatter.replace('-', '_')}:{_token_stratum}"),
+            tasks=tuple(
+                state_bench_task_name(config_name, _token_stratum)
+                for config_name in STATE_BENCH_CONFIGS
+                if config_name.startswith(f"{_formatter}--")
+                and _token_stratum in STATE_BENCH_STRATA_BY_CONFIG[config_name]
+            ),
+            aggregation=AggregationStrategy.AVERAGE,
+            description=(
+                f"Long-context StateBench {_formatter} tasks in the {_token_stratum} context tier."
+            ),
+        )
+        make_suite(
+            name=(f"state_bench_10pct:{_formatter.replace('-', '_')}:{_token_stratum}"),
+            tasks=tuple(
+                state_bench_10pct_task_name(config_name, _token_stratum)
+                for config_name in STATE_BENCH_CONFIGS
+                if config_name.startswith(f"{_formatter}--")
+                and _token_stratum in STATE_BENCH_STRATA_BY_CONFIG[config_name]
+            ),
+            aggregation=AggregationStrategy.AVERAGE,
+            description=(
+                f"Deterministic 10% StateBench {_formatter} sample in the "
+                f"{_token_stratum} context tier."
+            ),
+        )
 
 for _token_stratum in STATE_BENCH_TOKEN_STRATA:
     make_suite(

@@ -41,10 +41,7 @@ MODEL_ROOTS = {
 }
 
 CHECKPOINTS = {
-    model: {
-        step: model_root / f"step{step}-hf"
-        for step in CHECKPOINT_STEPS[model[:2]]
-    }
+    model: {step: model_root / f"step{step}-hf" for step in CHECKPOINT_STEPS[model[:2]]}
     for model, model_root in MODEL_ROOTS.items()
 }
 
@@ -105,6 +102,8 @@ def build_command(
     max_model_len: int,
     num_gpus: int = NUM_GPUS,
     cluster: str = CLUSTER,
+    group: str = GROUP,
+    workspace: str = WORKSPACE,
 ) -> list[str]:
     task_short = task.replace(":", "_")
     cmd = [
@@ -133,11 +132,11 @@ def build_command(
             "--priority",
             PRIORITY,
             "--group",
-            GROUP,
+            group,
             "--cluster",
             cluster,
             "--workspace",
-            WORKSPACE,
+            workspace,
             "--budget",
             BUDGET,
             "--inspect",
@@ -204,6 +203,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--gpus", type=int, default=NUM_GPUS)
     parser.add_argument("--cluster", default=CLUSTER)
+    parser.add_argument("--group", default=GROUP, help="Beaker workgroup for launched jobs.")
+    parser.add_argument(
+        "--workspace", default=WORKSPACE, help="Beaker workspace for launched jobs."
+    )
     checkpoint_group = parser.add_mutually_exclusive_group()
     checkpoint_group.add_argument("--checkpoints", "-c", nargs="+", type=int)
     checkpoint_group.add_argument(
@@ -212,7 +215,9 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         help="Evaluate every configured checkpoint.",
     )
-    checkpoint_group.add_argument("--final", dest="final", action="store_true", help=argparse.SUPPRESS)
+    checkpoint_group.add_argument(
+        "--final", dest="final", action="store_true", help=argparse.SUPPRESS
+    )
     parser.set_defaults(final=True)
     parser.add_argument(
         "--strata",
@@ -231,7 +236,7 @@ def main() -> None:
         for dataset_type in args.dataset_type:
             for stratum in args.strata:
                 token_stratum, max_model_len = TOKEN_STRATA[stratum]
-                task = f"state_bench:{token_stratum}"
+                task = f"state_bench:integer_code:{token_stratum}"
                 for seed in args.seed:
                     checkpoints = resolve_checkpoints(
                         model_type, dataset_type, seed, args.checkpoints, args.final
@@ -245,6 +250,8 @@ def main() -> None:
                             max_model_len,
                             args.gpus,
                             args.cluster,
+                            args.group,
+                            args.workspace,
                         )
                         if args.dry_run:
                             print(shlex.join(command))
