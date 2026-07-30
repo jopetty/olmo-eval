@@ -49,7 +49,11 @@ CHECKPOINTS = {
 }
 
 OLMO_3_7B_BASE_ID = "allenai/Olmo-3-1025-7B"
-TASKS = ["state_bench"]
+TOKEN_STRATA = {
+    "short": ("tokens_0_100k", 100_000),
+    "medium": ("tokens_100k_500k", 500_000),
+    "long": ("tokens_500k_1m", 1_000_000),
+}
 
 BASE_HARNESS_OVERRIDES = [
     ("provider.num_instances", "{num_gpus}"),
@@ -97,11 +101,12 @@ def get_model_short_name(model_path: str) -> str:
 def build_command(
     model_path: str,
     model_type: str,
-    tasks: list[str],
+    task: str,
+    max_model_len: int,
     num_gpus: int = NUM_GPUS,
     cluster: str = CLUSTER,
 ) -> list[str]:
-    tasks_short = "-".join(task.replace(":", "_") for task in tasks)
+    task_short = task.replace(":", "_")
     cmd = [
         "uv",
         "run",
@@ -111,16 +116,16 @@ def build_command(
         "-H",
         "default",
         "-n",
-        f"{get_model_short_name(model_path)}-{tasks_short}",
+        f"{get_model_short_name(model_path)}-{task_short}",
     ]
     harness_overrides = (
         HYBRID_HARNESS_OVERRIDES if model_type == "hybrid" else TRANSFORMER_HARNESS_OVERRIDES
     )
     for key, value in harness_overrides:
         cmd.extend(["-o", f"{key}={value.replace('{num_gpus}', str(num_gpus))}"])
+    cmd.extend(["-o", f"provider.max_model_len={max_model_len}"])
     cmd.extend(["-m", model_path])
-    for task in tasks:
-        cmd.extend(["-t", task])
+    cmd.extend(["-t", task])
     cmd.extend(
         [
             "--gpus",
@@ -162,43 +167,75 @@ def resolve_checkpoints(
             f"No HF checkpoints are configured for {model_type}/{dataset_type}/seed{seed}. "
             f"Available combinations: {available}"
         )
+    if requested_checkpoints is not None:
+        invalid = sorted(set(requested_checkpoints) - set(CHECKPOINTS[model]))
+        if invalid:
+            valid = ", ".join(str(step) for step in CHECKPOINTS[model])
+            raise ValueError(f"Invalid checkpoint(s) for {model}: {invalid}. Valid steps: {valid}")
+        return requested_checkpoints
     if final:
         return [max(CHECKPOINTS[model])]
-    if requested_checkpoints is None:
-        return list(CHECKPOINTS[model])
-    invalid = sorted(set(requested_checkpoints) - set(CHECKPOINTS[model]))
-    if invalid:
-        valid = ", ".join(str(step) for step in CHECKPOINTS[model])
-        raise ValueError(f"Invalid checkpoint(s) for {model}: {invalid}. Valid steps: {valid}")
-    return requested_checkpoints
+    return list(CHECKPOINTS[model])
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model-type", choices=MODEL_TYPES, default="transformer")
     parser.add_argument("--dataset-type", choices=DATASET_TYPES, default="aperiodic")
-    parser.add_argument("--seed", type=int, choices=SEEDS, default=0)
+    parser.add_argument(
+        "--seed",
+        nargs="+",
+        type=int,
+        choices=SEEDS,
+        default=SEEDS,
+        help="Initialization seed(s) to evaluate. Defaults to all configured seeds.",
+    )
     parser.add_argument("--gpus", type=int, default=NUM_GPUS)
     parser.add_argument("--cluster", default=CLUSTER)
     checkpoint_group = parser.add_mutually_exclusive_group()
     checkpoint_group.add_argument("--checkpoints", "-c", nargs="+", type=int)
-    checkpoint_group.add_argument("--final", action="store_true")
+    checkpoint_group.add_argument(
+        "--all-checkpoints",
+        dest="final",
+        action="store_false",
+        help="Evaluate every configured checkpoint.",
+    )
+    checkpoint_group.add_argument("--final", dest="final", action="store_true", help=argparse.SUPPRESS)
+    parser.set_defaults(final=True)
+    parser.add_argument(
+        "--strata",
+        nargs="+",
+        choices=TOKEN_STRATA,
+        default=["short"],
+        help="StateBench context-length strata to evaluate. Defaults to short.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    checkpoints = resolve_checkpoints(
-        args.model_type, args.dataset_type, args.seed, args.checkpoints, args.final
-    )
-    for checkpoint in checkpoints:
-        model_path = str(CHECKPOINTS[(args.model_type, args.dataset_type, args.seed)][checkpoint])
-        command = build_command(model_path, args.model_type, TASKS, args.gpus, args.cluster)
-        if args.dry_run:
-            print(shlex.join(command))
-        else:
-            subprocess.run(command, check=True)
+    for stratum in args.strata:
+        token_stratum, max_model_len = TOKEN_STRATA[stratum]
+        task = f"state_bench:{token_stratum}"
+        for seed in args.seed:
+            checkpoints = resolve_checkpoints(
+                args.model_type, args.dataset_type, seed, args.checkpoints, args.final
+            )
+            for checkpoint in checkpoints:
+                model_path = str(CHECKPOINTS[(args.model_type, args.dataset_type, seed)][checkpoint])
+                command = build_command(
+                    model_path,
+                    args.model_type,
+                    task,
+                    max_model_len,
+                    args.gpus,
+                    args.cluster,
+                )
+                if args.dry_run:
+                    print(shlex.join(command))
+                else:
+                    subprocess.run(command, check=True)
 
 
 if __name__ == "__main__":
