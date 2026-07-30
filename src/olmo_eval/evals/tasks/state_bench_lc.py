@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+import random
 from collections.abc import Iterator
 from typing import Any
 
@@ -50,8 +52,19 @@ def state_bench_task_name(config_name: str, token_stratum: str) -> str:
     return f"state_bench_{normalized}_{token_stratum}"
 
 
+def state_bench_10pct_task_name(config_name: str, token_stratum: str) -> str:
+    """Return the 10%-sample task name for a dataset config and stratum."""
+    return f"{state_bench_task_name(config_name, token_stratum)}_10pct"
+
+
 STATE_BENCH_TASKS = tuple(
     state_bench_task_name(config_name, token_stratum)
+    for config_name in STATE_BENCH_CONFIGS
+    for token_stratum in STATE_BENCH_STRATA_BY_CONFIG[config_name]
+)
+
+STATE_BENCH_10PCT_TASKS = tuple(
+    state_bench_10pct_task_name(config_name, token_stratum)
     for config_name in STATE_BENCH_CONFIGS
     for token_stratum in STATE_BENCH_STRATA_BY_CONFIG[config_name]
 )
@@ -116,6 +129,16 @@ class StateBench(Task):
         )
 
 
+class StateBench10Percent(StateBench):
+    """StateBench task using a deterministic 10% sample of the evaluation split."""
+
+    @property
+    def instances(self) -> Iterator[Instance]:
+        instances = list(self._load_instances_cached(split=self.dataset_split))
+        sample_size = math.ceil(len(instances) / 10)
+        yield from random.Random(42).sample(instances, sample_size)
+
+
 for _config_name in STATE_BENCH_CONFIGS:
     for _token_stratum in STATE_BENCH_STRATA_BY_CONFIG[_config_name]:
         _name = state_bench_task_name(_config_name, _token_stratum)
@@ -138,3 +161,21 @@ for _config_name in STATE_BENCH_CONFIGS:
             },
         )
         globals()[_class_name] = register(_name)(_class)
+
+        _sample_name = state_bench_10pct_task_name(_config_name, _token_stratum)
+        _sample_class_name = f"{_class_name}10Percent"
+        _sample_class = type(
+            _sample_class_name,
+            (StateBench10Percent,),
+            {
+                "data_source": DataSource(
+                    STATE_BENCH_REPO,
+                    subset=_config_name,
+                    split=_dataset_split,
+                ),
+                "dataset_split": _dataset_split,
+                "__module__": __name__,
+                "__qualname__": _sample_class_name,
+            },
+        )
+        globals()[_sample_class_name] = register(_sample_name)(_sample_class)
