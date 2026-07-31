@@ -48,7 +48,7 @@ crawl4ai = [
     "crawl4ai>=0.8",
 ]
 hf = [
-    "transformers>=5.4.0",
+    "transformers>=5.7.0",
 ]
 olmo_core = [
     "ai2-olmo-core[torchao,transformers]==2.4.0",
@@ -244,6 +244,7 @@ allowed-unresolved-imports = [
     "instructions_registry.**",
     "instructions.**",
     "crawl4ai.**",
+    "abstract_algebra.**",
 ]
 
 [tool.gantry]
