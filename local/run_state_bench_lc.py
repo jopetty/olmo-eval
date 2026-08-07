@@ -192,7 +192,17 @@ def main():
     parser.add_argument(
         "--sizes",
         nargs="+",
-        choices=["275m", "275m-transformer", "275m-gdn", "450m", "810m", "1.4b", "2.7b", "2.7b-lr5em5", "2.7b-warmup5k"],
+        choices=[
+            "275m",
+            "275m-transformer",
+            "275m-gdn",
+            "450m",
+            "810m",
+            "1.4b",
+            "2.7b",
+            "2.7b-lr5em5",
+            "2.7b-warmup5k",
+        ],
         default=["275m"],
     )
     parser.add_argument(
@@ -246,6 +256,11 @@ def main():
         default=list(TOKEN_STRATA),
         help="Context-length strata to launch as independent jobs (default: all).",
     )
+    parser.add_argument(
+        "--subsample",
+        action="store_true",
+        help="Use the deterministic 10%% StateBench task suites.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     num_gpus = args.gpus
@@ -264,7 +279,8 @@ def main():
         """Launch one StateBench context-length stratum for a model."""
         nonlocal launched
         token_stratum, max_model_len = TOKEN_STRATA[stratum]
-        task = f"state_bench:{token_stratum}"
+        suite_name = "state_bench_10pct" if args.subsample else "state_bench"
+        task = f"{suite_name}:{token_stratum}"
         cmd = build_command(
             model_path,
             num_gpus,
