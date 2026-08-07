@@ -123,9 +123,8 @@ BASELINES: dict[str, dict[str, str | int]] = {
 }
 
 TOKEN_STRATA = {
-    "short": ("tokens_0_100k", 100_000),
-    "medium": ("tokens_100k_500k", 500_000),
-    "long": ("tokens_500k_1m", 1_000_000),
+    "short": ("tokens_0_100k", 128_000),
+    "medium": ("tokens_256k", 256_000),
 }
 
 

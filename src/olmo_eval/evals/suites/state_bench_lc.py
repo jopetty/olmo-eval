@@ -2,6 +2,7 @@ from olmo_eval.evals.suites.registry import AggregationStrategy, make_suite
 from olmo_eval.evals.tasks.state_bench_lc import (
     STATE_BENCH_10PCT_TASKS,
     STATE_BENCH_CONFIGS,
+    STATE_BENCH_SHORT_TOKEN_STRATA,
     STATE_BENCH_STRATA_BY_CONFIG,
     STATE_BENCH_TASKS,
     STATE_BENCH_TOKEN_STRATA,
@@ -105,6 +106,32 @@ for _formatter in (
                 f"{_token_stratum} context tier."
             ),
         )
+    make_suite(
+        name=f"state_bench:{_formatter.replace('-', '_')}:tokens_0_100k",
+        tasks=tuple(
+            state_bench_task_name(config_name, token_stratum)
+            for config_name in STATE_BENCH_CONFIGS
+            if config_name.startswith(f"{_formatter}--")
+            for token_stratum in STATE_BENCH_SHORT_TOKEN_STRATA
+            if token_stratum in STATE_BENCH_STRATA_BY_CONFIG[config_name]
+        ),
+        aggregation=AggregationStrategy.AVERAGE,
+        description=(f"Long-context StateBench {_formatter} tasks through the 128k context tier."),
+    )
+    make_suite(
+        name=f"state_bench_10pct:{_formatter.replace('-', '_')}:tokens_0_100k",
+        tasks=tuple(
+            state_bench_10pct_task_name(config_name, token_stratum)
+            for config_name in STATE_BENCH_CONFIGS
+            if config_name.startswith(f"{_formatter}--")
+            for token_stratum in STATE_BENCH_SHORT_TOKEN_STRATA
+            if token_stratum in STATE_BENCH_STRATA_BY_CONFIG[config_name]
+        ),
+        aggregation=AggregationStrategy.AVERAGE,
+        description=(
+            f"Deterministic 10% StateBench {_formatter} sample through the 128k context tier."
+        ),
+    )
 
 for _token_stratum in STATE_BENCH_TOKEN_STRATA:
     make_suite(
@@ -127,3 +154,26 @@ for _token_stratum in STATE_BENCH_TOKEN_STRATA:
         aggregation=AggregationStrategy.AVERAGE,
         description=f"Deterministic 10% StateBench sample in the {_token_stratum} context tier.",
     )
+
+make_suite(
+    name="state_bench:tokens_0_100k",
+    tasks=tuple(
+        state_bench_task_name(config_name, token_stratum)
+        for config_name in STATE_BENCH_CONFIGS
+        for token_stratum in STATE_BENCH_SHORT_TOKEN_STRATA
+        if token_stratum in STATE_BENCH_STRATA_BY_CONFIG[config_name]
+    ),
+    aggregation=AggregationStrategy.AVERAGE,
+    description="Long-context StateBench tasks through the 128k context tier.",
+)
+make_suite(
+    name="state_bench_10pct:tokens_0_100k",
+    tasks=tuple(
+        state_bench_10pct_task_name(config_name, token_stratum)
+        for config_name in STATE_BENCH_CONFIGS
+        for token_stratum in STATE_BENCH_SHORT_TOKEN_STRATA
+        if token_stratum in STATE_BENCH_STRATA_BY_CONFIG[config_name]
+    ),
+    aggregation=AggregationStrategy.AVERAGE,
+    description="Deterministic 10% StateBench sample through the 128k context tier.",
+)

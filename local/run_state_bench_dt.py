@@ -47,9 +47,8 @@ CHECKPOINTS = {
 
 OLMO_3_7B_BASE_ID = "allenai/Olmo-3-1025-7B"
 TOKEN_STRATA = {
-    "short": ("tokens_0_100k", 100_000),
-    "medium": ("tokens_100k_500k", 500_000),
-    "long": ("tokens_500k_1m", 1_000_000),
+    "short": ("tokens_0_100k", 128_000),
+    "medium": ("tokens_256k", 256_000),
 }
 
 BASE_HARNESS_OVERRIDES = [

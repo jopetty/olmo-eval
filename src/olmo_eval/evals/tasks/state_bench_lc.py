@@ -36,10 +36,17 @@ STATE_BENCH_CONFIGS = (
 )
 
 STATE_BENCH_TOKEN_STRATA = (
-    "tokens_0_100k",
-    "tokens_100k_500k",
-    "tokens_500k_1m",
+    "tokens_under_2k",
+    "tokens_4k",
+    "tokens_8k",
+    "tokens_16k",
+    "tokens_32k",
+    "tokens_64k",
+    "tokens_128k",
+    "tokens_256k",
 )
+
+STATE_BENCH_SHORT_TOKEN_STRATA = STATE_BENCH_TOKEN_STRATA[:7]
 
 STATE_BENCH_STRATA_BY_CONFIG = {
     config_name: STATE_BENCH_TOKEN_STRATA for config_name in STATE_BENCH_CONFIGS
