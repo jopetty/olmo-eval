@@ -302,6 +302,7 @@ def build_command(
     max_model_len: int = 131072,
     plugins_ref: str | None = None,
     harness: str = DEFAULT_HARNESS,
+    image: str | None = None,
 ) -> list[str]:
     exp_name = experiment_name(model_path, tasks)
 
@@ -321,6 +322,8 @@ def build_command(
     cmd += ["-o", "provider.kwargs.attention_backend=FLASH_ATTN"]
     if is_lc:
         cmd += ["-o", f"provider.max_model_len={max_model_len}"]
+    if image:
+        cmd += ["-I", image]
     cmd += ["-m", model_path]
     for task in tasks:
         cmd += ["-t", task]
@@ -402,6 +405,14 @@ def main():
     parser.add_argument(
         "--delay", type=int, default=0, help="Seconds to wait between launching each eval job"
     )
+    parser.add_argument(
+        "--image",
+        type=str,
+        default=None,
+        help="Beaker image override (e.g. ai2-tylerm/olmo-eval-cu1281-trc2100-amd64). "
+        "Default: olmo-eval's built-in default image (or the harness's own image, e.g. "
+        "for the codex_universal sandbox harness).",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     num_gpus = args.gpus
@@ -462,6 +473,7 @@ def main():
             max_model_len=resolved_max_model_len or 131072,
             plugins_ref=plugins_ref,
             harness=harness,
+            image=args.image,
         )
         mml = resolved_max_model_len if is_lc else "-"
         print(
