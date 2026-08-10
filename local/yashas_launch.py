@@ -299,6 +299,7 @@ def build_command(
     num_gpus: int = NUM_GPUS,
     is_lc: bool = False,
     group: str = GROUP,
+    cluster: str = CLUSTER,
     max_model_len: int = 131072,
     plugins_ref: str | None = None,
     harness: str = DEFAULT_HARNESS,
@@ -330,7 +331,7 @@ def build_command(
     cmd += ["--gpus", str(num_gpus)]
     cmd += ["--priority", PRIORITY]
     cmd += ["--group", group]
-    cmd += ["--cluster", CLUSTER]
+    cmd += ["--cluster", cluster]
     cmd += ["--workspace", WORKSPACE]
     cmd += ["--budget", BUDGET]
     cmd += ["--inspect"]
@@ -367,6 +368,12 @@ def main():
     )
     parser.add_argument(
         "--group", type=str, default=GROUP, help="Beaker workgroup for launched jobs."
+    )
+    parser.add_argument(
+        "--cluster",
+        type=str,
+        default=CLUSTER,
+        help="Beaker cluster alias or full name for launched jobs.",
     )
     parser.add_argument("--gpus", type=int, default=NUM_GPUS, help="Number of GPUs per job.")
     parser.add_argument(
@@ -417,6 +424,7 @@ def main():
     args = parser.parse_args()
     num_gpus = args.gpus
     group = args.group
+    cluster = args.cluster
 
     # Resolve the ref the eval job installs the plugins from: explicit --plugins-ref
     # wins, then --use-latest, else the current branch (requires a git checkout).
@@ -470,6 +478,7 @@ def main():
             job_gpus,
             is_lc=is_lc,
             group=group,
+            cluster=cluster,
             max_model_len=resolved_max_model_len or 131072,
             plugins_ref=plugins_ref,
             harness=harness,
