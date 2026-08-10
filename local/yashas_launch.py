@@ -431,9 +431,16 @@ def main():
     launched = 0
 
     def launch_group(
-        model_path, names, gpus, *, label, max_model_len=131072, harness=DEFAULT_HARNESS
+        model_path, names, gpus, *, label, max_model_len=None, harness=DEFAULT_HARNESS
     ):
-        """Launch one Beaker job running all of `names` together for `model_path`."""
+        """Launch one Beaker job running all of `names` together for `model_path`.
+
+        max_model_len defaults to None, meaning: if the job includes any lc
+        (RULER) tasks, auto-derive it as 1000 tokens above the longest
+        selected lc task's sequence length, so it always fits (rather than a
+        fixed constant that silently truncates tasks longer than it). Pass an
+        explicit value (e.g. a baseline's native context) to override this.
+        """
         nonlocal launched
         names = filter_lc_names(names)
         if not names:
@@ -442,17 +449,21 @@ def main():
         # Explicit --gpus overrides the suite's requested count.
         job_gpus = num_gpus if num_gpus != NUM_GPUS else gpus
         is_lc = any(n in LC_TASK_NAMES for n in names)
+        resolved_max_model_len = max_model_len
+        if resolved_max_model_len is None and is_lc:
+            longest_lc_task = max(ruler_length(n) for n in names if n in LC_TASK_NAMES)
+            resolved_max_model_len = longest_lc_task + 1000
         cmd = build_command(
             model_path,
             names,
             job_gpus,
             is_lc=is_lc,
             group=group,
-            max_model_len=max_model_len,
+            max_model_len=resolved_max_model_len or 131072,
             plugins_ref=plugins_ref,
             harness=harness,
         )
-        mml = max_model_len if is_lc else "-"
+        mml = resolved_max_model_len if is_lc else "-"
         print(
             f"\n=== {label} | {len(names)} task(s) | {job_gpus} GPUs "
             f"| mml={mml} | harness={harness} ==="
