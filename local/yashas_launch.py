@@ -6,7 +6,7 @@ import subprocess
 import time
 
 GROUP = "jacksonp-debug"
-CLUSTER = "ai2/jupiter"
+CLUSTER = "ai2/holmes"
 PRIORITY = "urgent"
 NUM_GPUS = 1
 WORKSPACE = "ai2/linear-rnns"
@@ -168,12 +168,16 @@ OLMOBASE_EASY = [
 ]
 
 OLMOBASE_LC_TASKS = [
-    ("ruler_all__4096", 1),
-    ("ruler_all__8192", 1),
-    ("ruler_all__16384", 1),
-    ("ruler_all__32768", 1),
-    ("ruler_all__65536", 1),
-    ("ruler_all__131072", 1),
+    ("ruler_lc_all__4096", 1),
+    ("ruler_lc_all__8192", 1),
+    ("ruler_lc_all__16384", 1),
+    ("ruler_lc_all__32768", 1),
+    ("ruler_lc_all__65536", 1),
+    ("ruler_lc_all__131072", 1),
+    ("ruler_lc_all__262144", 1),
+    ("ruler_lc_all__524288", 1),
+    ("ruler_lc_all__1048576", 1),
+    ("ruler_lc_all__2097152", 1),
 ]
 
 # Suite name -> task list; the key is what --eval-type selects.
